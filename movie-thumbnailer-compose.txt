@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+  movie-thumbnailer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: movie-thumbnailer
+    volumes:
+      - ./movies:/movies:ro             # Mount movies directory as read-only
+      - ./thumbnails:/thumbnails        # Mount thumbnails directory
+      - ./data:/data                    # Mount data directory for SQLite database
+    environment:
+      - INPUT_DIR=/movies
+      - OUTPUT_DIR=/thumbnails
+      - DB_FILE=/data/thumbnailer.db
+      - MAX_WORKERS=4
+    # Default command will run the help menu
+    # To scan: docker-compose run movie-thumbnailer scan
+    # To sync: docker-compose run movie-thumbnailer sync
