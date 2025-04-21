@@ -1,0 +1,13 @@
+# Feh configuration file
+# Save this as ~/.config/feh/keys or ~/.fehrc
+
+# Key bindings
+# Mark current image as viewed and move to next image
+m action_1
+
+# Standard navigation
+n next_img
+p prev_img
+q quit
+f toggle_fullscreen
+d remove
