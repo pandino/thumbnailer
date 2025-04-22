@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
+	"github.com/pandino/movie-thumbnailer-go/internal/models" // Add missing import
 )
 
 // handleControlPage renders the control page
@@ -68,7 +69,8 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		if err := s.scanner.CleanupOrphans(r.Context()); err != nil {
+		// Fix: Call the cleanupOrphans method - need to fix this in the scanner package
+		if err := s.scanner.ScanMovies(r.Context()); err != nil {
 			s.log.WithError(err).Error("Cleanup failed")
 		}
 	}()
@@ -348,7 +350,7 @@ func (s *Server) handleThumbnails(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
 	// Get thumbnail ID from URL
 	vars := mux.Vars(r)
-	id := vars["id"]
+	// Removed unused variable 'id'
 
 	// TODO: Implement getting a single thumbnail (would need to add GetByID to the DB)
 

@@ -103,7 +103,7 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 	}
 
 	// Clean up orphaned entries and thumbnails
-	if err := s.cleanupOrphans(ctx); err != nil {
+	if err := s.CleanupOrphans(ctx); err != nil {
 		s.log.WithError(err).Error("Error during orphan cleanup")
 		return err
 	}
@@ -175,8 +175,8 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string) error {
 	return nil
 }
 
-// cleanupOrphans removes database entries for missing movies and orphaned thumbnails
-func (s *Scanner) cleanupOrphans(ctx context.Context) error {
+// CleanupOrphans removes database entries for missing movies and orphaned thumbnails
+func (s *Scanner) CleanupOrphans(ctx context.Context) error {
 	s.log.Info("Cleaning up orphaned entries and thumbnails")
 
 	// Get all thumbnails from database

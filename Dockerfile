@@ -2,8 +2,8 @@ FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apk add --no-cache git
+# Install build dependencies including gcc and musl-dev
+RUN apk add --no-cache git gcc musl-dev
 
 # Copy go.mod and go.sum files
 COPY go.mod go.sum* ./
@@ -28,9 +28,7 @@ RUN apk add --no-cache \
     sqlite \
     ca-certificates \
     tzdata \
-    dumb-init \
-    gcc \
-    musl-dev
+    dumb-init
 
 # Set up non-root user
 RUN addgroup -g 1000 thumbnailer && \
