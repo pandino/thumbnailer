@@ -2,6 +2,7 @@
 #
 # Thumbnail Viewer - View thumbnails created by movie-thumbnailer.sh
 # Works with feh to view and mark thumbnails as viewed
+# Modified to work with pathless names in database
 #
 
 # Configuration (can be overridden with environment variables)
@@ -79,25 +80,26 @@ update_schema() {
 # Function to mark a thumbnail as viewed
 mark_as_viewed() {
   local thumbnail_path="$1"
+  local thumbnail_filename=$(basename "$thumbnail_path")
   
   # Get the corresponding movie path
-  local movie_path=$(sqlite3 "$DB_FILE" "SELECT movie_path FROM thumbnails WHERE thumbnail_path = '$thumbnail_path';")
+  local movie_filename=$(sqlite3 "$DB_FILE" "SELECT movie_path FROM thumbnails WHERE thumbnail_path = '$thumbnail_filename';")
   
-  if [ -z "$movie_path" ]; then
-    log "ERROR: Could not find movie for thumbnail: $thumbnail_path"
+  if [ -z "$movie_filename" ]; then
+    log "ERROR: Could not find movie for thumbnail: $thumbnail_filename"
     return 1
   fi
   
-  log "Marking as viewed: $(basename "$movie_path")"
+  log "Marking as viewed: $movie_filename"
   
   # Update the database
-  sqlite3 "$DB_FILE" "UPDATE thumbnails SET viewed = 1, status = 'viewed' WHERE movie_path = '$movie_path';"
+  sqlite3 "$DB_FILE" "UPDATE thumbnails SET viewed = 1, status = 'viewed' WHERE movie_path = '$movie_filename';"
   
   if [ $? -eq 0 ]; then
-    log "Successfully marked as viewed: $(basename "$movie_path")"
+    log "Successfully marked as viewed: $movie_filename"
     return 0
   else
-    log "ERROR: Failed to mark as viewed: $(basename "$movie_path")"
+    log "ERROR: Failed to mark as viewed: $movie_filename"
     return 1
   fi
 }
@@ -111,8 +113,10 @@ create_unviewed_list() {
   # Get all successful thumbnails that have not been viewed
   local query="SELECT thumbnail_path FROM thumbnails WHERE status = 'success' AND (viewed = 0 OR viewed IS NULL) AND thumbnail_path IS NOT NULL ORDER BY created_at DESC;"
   
-  # Execute the query and write results to temp file
-  sqlite3 "$DB_FILE" "$query" > "$temp_file"
+  # Execute the query and write results to temp file with full paths
+  sqlite3 "$DB_FILE" "$query" | while read -r thumbnail_filename; do
+    echo "$THUMBNAIL_DIR/$thumbnail_filename" >> "$temp_file"
+  done
   
   # Count the number of thumbnails
   local count=$(wc -l < "$temp_file")
@@ -216,7 +220,7 @@ display_help() {
   echo "  mark-viewed PATH - Mark a specific thumbnail as viewed"
   echo "  reset-views      - Reset all viewed statuses to unviewed"
   echo "  list-unviewed    - List all unviewed thumbnails"
-  echo "  list-viewed      - List all viewed thumbnails"
+  echo "  list-viewed      - List all viewed thumbnails" 
   echo "  help             - Show this help"
   echo ""
   echo "Environment Variables:"
@@ -257,12 +261,12 @@ list_unviewed() {
   echo "------------------------------"
   
   # Display the results
-  echo "$results" | while IFS="|" read -r thumbnail_path movie_path; do
+  echo "$results" | while IFS="|" read -r thumbnail_filename movie_filename; do
     # Skip if empty
-    [ -z "$thumbnail_path" ] && continue
+    [ -z "$thumbnail_filename" ] && continue
     
-    echo "Movie: $(basename "$movie_path")"
-    echo "Thumbnail: $thumbnail_path"
+    echo "Movie: $movie_filename"
+    echo "Thumbnail: $THUMBNAIL_DIR/$thumbnail_filename"
     echo "------------------------------"
   done
   
@@ -292,12 +296,12 @@ list_viewed() {
   echo "------------------------------"
   
   # Display the results
-  echo "$results" | while IFS="|" read -r thumbnail_path movie_path; do
+  echo "$results" | while IFS="|" read -r thumbnail_filename movie_filename; do
     # Skip if empty
-    [ -z "$thumbnail_path" ] && continue
+    [ -z "$thumbnail_filename" ] && continue
     
-    echo "Movie: $(basename "$movie_path")"
-    echo "Thumbnail: $thumbnail_path"
+    echo "Movie: $movie_filename"
+    echo "Thumbnail: $THUMBNAIL_DIR/$thumbnail_filename"
     echo "------------------------------"
   done
   

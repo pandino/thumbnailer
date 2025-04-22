@@ -1,6 +1,7 @@
 #!/bin/bash
 #
 # Movie Thumbnailer - Complete Version with Full Cleanup
+# Modified to use pathless names in the database
 #
 
 # Configuration
@@ -98,13 +99,14 @@ add_to_database() {
   local movie_path="$1"
   local thumbnail_path="$2"
   local filename=$(basename "$movie_path")
+  local thumbnail_filename=$(basename "$thumbnail_path")
   local actual_pid=$$
 
   log "Adding to database: $filename" "$actual_pid"
 
   sqlite3 "$DB_FILE" "
     INSERT OR REPLACE INTO thumbnails (movie_path, movie_filename, thumbnail_path, status)
-    VALUES ('$movie_path', '$filename', '$thumbnail_path', 'pending');
+    VALUES ('$filename', '$filename', '$thumbnail_filename', 'pending');
   "
 
   if [ $? -ne 0 ]; then
@@ -121,20 +123,21 @@ update_status() {
   local movie_path="$1"
   local status="$2"
   local actual_pid=$$
+  local filename=$(basename "$movie_path")
 
-  log "Updating status for $(basename "$movie_path") to $status" "$actual_pid"
+  log "Updating status for $filename to $status" "$actual_pid"
 
   sqlite3 "$DB_FILE" "
     UPDATE thumbnails 
     SET status = '$status'
-    WHERE movie_path = '$movie_path';
+    WHERE movie_path = '$filename';
   "
 
   if [ $? -ne 0 ]; then
-    log "ERROR: Failed to update status for $(basename "$movie_path")" "$actual_pid"
+    log "ERROR: Failed to update status for $filename" "$actual_pid"
     return 1
   else
-    log "Updated status for $(basename "$movie_path")" "$actual_pid"
+    log "Updated status for $filename" "$actual_pid"
     return 0
   fi
 }
@@ -144,30 +147,31 @@ remove_from_database() {
   local movie_path="$1"
   local actual_pid=$$
   local delete_thumbnail="${2:-true}" # Default to deleting thumbnail
+  local filename=$(basename "$movie_path")
 
   # Get the thumbnail path first before deleting the database entry
-  local thumbnail_path=$(sqlite3 "$DB_FILE" "SELECT thumbnail_path FROM thumbnails WHERE movie_path = '$movie_path';")
+  local thumbnail_path=$(sqlite3 "$DB_FILE" "SELECT thumbnail_path FROM thumbnails WHERE movie_path = '$filename';")
 
-  log "Removing from database: $(basename "$movie_path")" "$actual_pid"
+  log "Removing from database: $filename" "$actual_pid"
 
   # Delete from database
   sqlite3 "$DB_FILE" "
-    DELETE FROM thumbnails WHERE movie_path = '$movie_path';
+    DELETE FROM thumbnails WHERE movie_path = '$filename';
   "
 
   if [ $? -ne 0 ]; then
-    log "ERROR: Failed to remove $(basename "$movie_path") from database" "$actual_pid"
+    log "ERROR: Failed to remove $filename from database" "$actual_pid"
     return 1
   else
-    log "Removed $(basename "$movie_path") from database" "$actual_pid"
+    log "Removed $filename from database" "$actual_pid"
 
     # If thumbnail deletion is requested and the thumbnail exists, delete it
-    if [ "$delete_thumbnail" = "true" ] && [ -n "$thumbnail_path" ] && [ -f "$thumbnail_path" ]; then
-      log "Deleting associated thumbnail: $(basename "$thumbnail_path")" "$actual_pid"
-      if rm -f "$thumbnail_path"; then
-        log "Successfully deleted thumbnail: $(basename "$thumbnail_path")" "$actual_pid"
+    if [ "$delete_thumbnail" = "true" ] && [ -n "$thumbnail_path" ] && [ -f "$OUTPUT_DIR/$thumbnail_path" ]; then
+      log "Deleting associated thumbnail: $thumbnail_path" "$actual_pid"
+      if rm -f "$OUTPUT_DIR/$thumbnail_path"; then
+        log "Successfully deleted thumbnail: $thumbnail_path" "$actual_pid"
       else
-        log "ERROR: Failed to delete thumbnail: $(basename "$thumbnail_path")" "$actual_pid"
+        log "ERROR: Failed to delete thumbnail: $thumbnail_path" "$actual_pid"
       fi
     fi
 
@@ -180,6 +184,7 @@ create_thumbnail() {
   local movie_path="$1"
   local filename=$(basename "$movie_path")
   local output_path="$OUTPUT_DIR/${filename%.*}.jpg"
+  local output_filename=$(basename "$output_path")
   local actual_pid=$$
 
   # Log with actual PID
@@ -339,28 +344,27 @@ cleanup_database() {
   local thumbnail_count=0
 
   # Check each movie
-  while IFS='|' read -r movie_path thumbnail_path; do
+  while IFS='|' read -r movie_filename thumbnail_filename; do
     # Skip if empty
-    [ -z "$movie_path" ] && continue
+    [ -z "$movie_filename" ] && continue
 
-    # Check if movie file exists
-    if [ ! -f "$movie_path" ]; then
-      local filename=$(basename "$movie_path")
-      log "Movie file not found: $filename, removing from database and cleaning up"
+    # Check if movie file exists (using INPUT_DIR + filename)
+    if [ ! -f "$INPUT_DIR/$movie_filename" ]; then
+      log "Movie file not found: $movie_filename, removing from database and cleaning up"
 
       # Delete the thumbnail if it exists
-      if [ -n "$thumbnail_path" ] && [ -f "$thumbnail_path" ]; then
-        log "Deleting orphaned thumbnail: $(basename "$thumbnail_path")"
-        if rm -f "$thumbnail_path"; then
-          log "Successfully deleted orphaned thumbnail: $(basename "$thumbnail_path")"
+      if [ -n "$thumbnail_filename" ] && [ -f "$OUTPUT_DIR/$thumbnail_filename" ]; then
+        log "Deleting orphaned thumbnail: $thumbnail_filename"
+        if rm -f "$OUTPUT_DIR/$thumbnail_filename"; then
+          log "Successfully deleted orphaned thumbnail: $thumbnail_filename"
           thumbnail_count=$((thumbnail_count + 1))
         else
-          log "ERROR: Failed to delete orphaned thumbnail: $(basename "$thumbnail_path")"
+          log "ERROR: Failed to delete orphaned thumbnail: $thumbnail_filename"
         fi
       fi
 
-      # Remove from database
-      remove_from_database "$movie_path" "false" # Skip thumbnail deletion since we've already handled it
+      # Remove from database - construct full path for function but it will use basename
+      remove_from_database "$INPUT_DIR/$movie_filename" "false" # Skip thumbnail deletion since we've already handled it
       removed_count=$((removed_count + 1))
     fi
   done <<<"$movies"
@@ -387,17 +391,18 @@ cleanup_orphaned_thumbnails() {
   while read -r thumbnail_path; do
     # Skip if empty
     [ -z "$thumbnail_path" ] && continue
+    
+    local thumbnail_filename=$(basename "$thumbnail_path")
 
     # Check if thumbnail is in the database
-    if ! grep -q "^$thumbnail_path$" "$db_thumbs_file"; then
-      local thumb_filename=$(basename "$thumbnail_path")
-      log "Orphaned thumbnail found: $thumb_filename, deleting"
+    if ! grep -q "^$thumbnail_filename$" "$db_thumbs_file"; then
+      log "Orphaned thumbnail found: $thumbnail_filename, deleting"
 
       if rm -f "$thumbnail_path"; then
-        log "Successfully deleted orphaned thumbnail: $thumb_filename"
+        log "Successfully deleted orphaned thumbnail: $thumbnail_filename"
         orphaned_count=$((orphaned_count + 1))
       else
-        log "ERROR: Failed to delete orphaned thumbnail: $thumb_filename"
+        log "ERROR: Failed to delete orphaned thumbnail: $thumbnail_filename"
       fi
     fi
   done <<<"$found_thumbs"
@@ -467,7 +472,7 @@ process_in_parallel() {
     local filename=$(basename "$movie")
 
     # Check if thumbnail already exists in the database
-    local status=$(sqlite3 "$DB_FILE" "SELECT status FROM thumbnails WHERE movie_path = '$movie';" 2>/dev/null)
+    local status=$(sqlite3 "$DB_FILE" "SELECT status FROM thumbnails WHERE movie_path = '$filename';" 2>/dev/null)
 
     if [ -n "$status" ] && [ "$status" = "success" ]; then
       log "Skipping $filename, already in database with status: $status"
@@ -487,7 +492,8 @@ process_in_parallel() {
           log "Process ${pids[$i]} for $(basename "${files[$i]}") completed with status $exit_status"
 
           # Check if the thumbnail was created
-          local output_path="$OUTPUT_DIR/$(basename "${files[$i]%.*}").jpg"
+          local output_filename="$(basename "${files[$i]%.*}").jpg"
+          local output_path="$OUTPUT_DIR/$output_filename"
           if [ -f "$output_path" ]; then
             log "Verified thumbnail exists for $(basename "${files[$i]}"): $output_path"
             log "Thumbnail file size: $(stat -c %s "$output_path") bytes"
@@ -546,7 +552,8 @@ process_in_parallel() {
       fi
 
       # Verify the thumbnail was actually created
-      local output_path="$OUTPUT_DIR/$(basename "${files[$i]%.*}").jpg"
+      local output_filename="$(basename "${files[$i]%.*}").jpg"
+      local output_path="$OUTPUT_DIR/$output_filename"
       if [ -f "$output_path" ]; then
         log "Verified thumbnail exists for $(basename "${files[$i]}"): $output_path"
         log "Thumbnail file size: $(stat -c %s "$output_path") bytes"
@@ -584,38 +591,38 @@ verify_thumbnails() {
   local missing_files=""
 
   # Check each movie
-  while IFS='|' read -r movie_path thumbnail_path; do
+  while IFS='|' read -r movie_filename thumbnail_filename; do
     # Skip if empty
-    [ -z "$movie_path" ] && continue
+    [ -z "$movie_filename" ] && continue
 
     # Skip if movie file doesn't exist - we've already cleaned these up
-    if [ ! -f "$movie_path" ]; then
+    if [ ! -f "$INPUT_DIR/$movie_filename" ]; then
       continue
     fi
 
     # Check if thumbnail exists
-    if [ ! -f "$thumbnail_path" ]; then
-      local filename=$(basename "$movie_path")
-      log "Missing thumbnail for $filename"
+    if [ ! -f "$OUTPUT_DIR/$thumbnail_filename" ]; then
+      log "Missing thumbnail for $movie_filename"
       missing_count=$((missing_count + 1))
-      missing_files="${missing_files}${filename}\n"
+      missing_files="${missing_files}${movie_filename}\n"
 
       # Update status in database to 'missing' only if it's not already marked as deleted or missing
-      local current_status=$(sqlite3 "$DB_FILE" "SELECT status FROM thumbnails WHERE movie_path = '$movie_path';")
+      local current_status=$(sqlite3 "$DB_FILE" "SELECT status FROM thumbnails WHERE movie_path = '$movie_filename';")
       if [ "$current_status" != "deleted" ] && [ "$current_status" != "missing" ]; then
-        sqlite3 "$DB_FILE" "UPDATE thumbnails SET status = 'missing' WHERE movie_path = '$movie_path';"
+        sqlite3 "$DB_FILE" "UPDATE thumbnails SET status = 'missing' WHERE movie_path = '$movie_filename';"
       fi
 
       # Delete the movie if requested
       if [ "$delete_mode" = "delete" ]; then
-        log "Deleting movie: $movie_path"
-        if rm -f "$movie_path"; then
-          log "Successfully deleted: $movie_path"
+        local full_movie_path="$INPUT_DIR/$movie_filename"
+        log "Deleting movie: $full_movie_path"
+        if rm -f "$full_movie_path"; then
+          log "Successfully deleted: $movie_filename"
           deleted_count=$((deleted_count + 1))
-          # Remove completely from database
-          remove_from_database "$movie_path" "false" # Skip thumbnail deletion since there's no thumbnail
+          # Remove completely from database (passing the full path for backward compatibility, though function uses basename)
+          remove_from_database "$full_movie_path" "false" # Skip thumbnail deletion since there's no thumbnail
         else
-          log "Failed to delete: $movie_path"
+          log "Failed to delete: $movie_filename"
         fi
       fi
     fi
@@ -826,7 +833,7 @@ main() {
 
 # Trap errors
 trap 'log "ERROR: Script failed at line $LINENO"' ERR
-trap 'log "Received SIGTERM, shutting down gracefully..."; kill -- -$$; exit 0' TERM
+trap 'log "Received SIGTERM, shutting down gracefully..."; kill -- -$; exit 0' TERM
 
 # Run main function with all arguments
 main "$@"
