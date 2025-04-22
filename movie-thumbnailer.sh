@@ -232,7 +232,7 @@ create_thumbnail() {
       fi
 
       # Count keyframes in the sample, starting 30 seconds in
-      sample_keyframes=$(ffprobe -v error -ss 30 -select_streams v:0 -skip_frame nokey -show_entries frame=pict_type -of csv=p=0 -read_intervals "%+$sample_duration" "$movie_path" 2>"$ffprobe_error_log" | wc -l)
+      sample_keyframes=$(ffprobe -v error -select_streams v:0 -skip_frame nokey -show_entries frame=pict_type -of csv=p=0 -read_intervals "30%+$sample_duration" "$movie_path" 2>"$ffprobe_error_log" | wc -l)
 
       if [ -n "$sample_keyframes" ] && [ "$sample_keyframes" -gt 0 ]; then
         # Estimate total keyframes based on the sample ratio
