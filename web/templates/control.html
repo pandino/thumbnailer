@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Thumbnailer - Control</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Movie Thumbnailer</h1>
+            <nav>
+                <ul>
+                    <li class="active"><a href="/">Control</a></li>
+                    <li><a href="/slideshow">Slideshow</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <main>
+            <section class="stats-panel">
+                <h2>Statistics</h2>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <span class="stat-value">{{.Stats.Total}}</span>
+                        <span class="stat-label">Total Movies</span>
+                    </div>
+                    <div class="stat-box success">
+                        <span class="stat-value">{{.Stats.Success}}</span>
+                        <span class="stat-label">Success</span>
+                    </div>
+                    <div class="stat-box error">
+                        <span class="stat-value">{{.Stats.Error}}</span>
+                        <span class="stat-label">Errors</span>
+                    </div>
+                    <div class="stat-box pending">
+                        <span class="stat-value">{{.Stats.Pending}}</span>
+                        <span class="stat-label">Pending</span>
+                    </div>
+                    <div class="stat-box unviewed">
+                        <span class="stat-value">{{.Stats.Unviewed}}</span>
+                        <span class="stat-label">Unviewed</span>
+                    </div>
+                    <div class="stat-box viewed">
+                        <span class="stat-value">{{.Stats.Viewed}}</span>
+                        <span class="stat-label">Viewed</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="actions-panel">
+                <h2>Actions</h2>
+                <div class="actions-grid">
+                    <form action="/scan" method="post">
+                        <button type="submit" class="action-button" {{if .IsScanning}}disabled{{end}}>
+                            <span class="action-icon">🔍</span>
+                            <span class="action-label">Scan Movies</span>
+                        </button>
+                    </form>
+                    
+                    <form action="/cleanup" method="post">
+                        <button type="submit" class="action-button" {{if .IsScanning}}disabled{{end}}>
+                            <span class="action-icon">🧹</span>
+                            <span class="action-label">Cleanup</span>
+                        </button>
+                    </form>
+
+                    <form action="/reset-views" method="post">
+                        <button type="submit" class="action-button" {{if .IsScanning}}disabled{{end}}>
+                            <span class="action-icon">🔄</span>
+                            <span class="action-label">Reset Views</span>
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+            {{if .IsScanning}}
+            <div class="scanning-indicator">
+                <div class="spinner"></div>
+                <span>Scan in progress...</span>
+            </div>
+            {{end}}
+
+            {{if .Stats.Unviewed}}
+            <section class="thumbnails-panel">
+                <h2>Unviewed Thumbnails ({{.Stats.Unviewed}})</h2>
+                <a href="/slideshow" class="start-slideshow">Start Slideshow</a>
+                <div id="unviewed-thumbnails" class="thumbnails-grid">
+                    <div class="loading">Loading...</div>
+                </div>
+            </section>
+            {{end}}
+
+            {{if .Stats.Error}}
+            <section class="thumbnails-panel error-panel">
+                <h2>Error Thumbnails ({{.Stats.Error}})</h2>
+                <div id="error-thumbnails" class="thumbnails-grid">
+                    <div class="loading">Loading...</div>
+                </div>
+            </section>
+            {{end}}
+        </main>
+
+        <footer>
+            <p>Movie Thumbnailer &copy; 2025</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,14 +1,14 @@
-# Docker Movie Thumbnailer
+# Movie Thumbnailer
 
-This project provides a containerized solution for generating thumbnail mosaics for movie files. It uses FFmpeg's tile filter to create a 2×6 grid of frames extracted from each movie.
+A Go application for generating and managing thumbnail mosaics from movie files. This project replaces the original shell script-based solution with a modern, containerized Go application that includes a web interface for viewing and managing thumbnails.
 
 ## Features
 
-- Lightweight Alpine-based container (~150MB)
-- Generates thumbnail mosaics from movie files
+- Generates thumbnail mosaics from movie files using FFmpeg
+- Runs scheduled background scans for new movie files
 - Maintains a SQLite database to track relationships
-- Provides synchronization and cleanup features
-- Runs as a non-root user for better security
+- Provides a web interface for browsing and managing thumbnails
+- Runs as a containerized application with minimal dependencies
 
 ## Prerequisites
 
@@ -19,132 +19,116 @@ This project provides a containerized solution for generating thumbnail mosaics 
 
 ### Using Docker Compose (Recommended)
 
-1. Create the following directory structure:
-   ```
-   movie-thumbnailer/
-   ├── Dockerfile
-   ├── docker-compose.yml
-   ├── movie-thumbnailer.sh
-   ├── movies/            # Place your movie files here
-   ├── thumbnails/        # Generated thumbnails will be stored here
-   └── data/              # SQLite database will be stored here
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/yourusername/movie-thumbnailer-go.git
+   cd movie-thumbnailer-go
    ```
 
-2. Place the movie-thumbnailer script, Dockerfile, and docker-compose.yml in the root directory.
+2. Create directories for movies, thumbnails, and data:
+   ```bash
+   mkdir -p movies thumbnails data
+   ```
 
-3. Build and run the container:
+3. Place your movie files in the `movies` directory.
+
+4. Build and run the container:
    ```bash
    # Build the container
    docker-compose build
 
-   # Scan for movies and generate thumbnails
-   docker-compose run movie-thumbnailer scan
-
-   # Synchronize database with files
-   docker-compose run movie-thumbnailer sync
-
-   # Show help
-   docker-compose run movie-thumbnailer --help
+   # Run the container
+   docker-compose up -d
    ```
+
+5. Access the web interface at http://localhost:8080
 
 ### Using Docker Directly
 
 1. Build the Docker image:
    ```bash
-   docker build -t movie-thumbnailer .
+   docker build -t movie-thumbnailer-go .
    ```
 
 2. Run the container:
    ```bash
-   # Show help
-   docker run --rm movie-thumbnailer
-
-   # Scan for movies and generate thumbnails
-   docker run --rm \
+   docker run -d --name movie-thumbnailer \
      -v "$(pwd)/movies:/movies:ro" \
      -v "$(pwd)/thumbnails:/thumbnails" \
      -v "$(pwd)/data:/data" \
-     movie-thumbnailer scan
-
-   # Synchronize database with files
-   docker run --rm \
-     -v "$(pwd)/movies:/movies:ro" \
-     -v "$(pwd)/thumbnails:/thumbnails" \
-     -v "$(pwd)/data:/data" \
-     movie-thumbnailer sync
+     -p 8080:8080 \
+     movie-thumbnailer-go
    ```
+
+3. Access the web interface at http://localhost:8080
 
 ## Configuration
 
-You can configure the container by passing environment variables:
+You can configure the application by setting environment variables:
+
+### Directory Settings
+- `MOVIE_INPUT_DIR`: Directory containing movie files (default: `/movies`)
+- `THUMBNAIL_OUTPUT_DIR`: Directory for generated thumbnails (default: `/thumbnails`)
+- `DATA_DIR`: Directory for data storage (default: `/data`)
+
+### Thumbnail Generation
+- `GRID_COLS`: Number of columns in the thumbnail grid (default: `8`)
+- `GRID_ROWS`: Number of rows in the thumbnail grid (default: `4`)
+- `MAX_WORKERS`: Maximum number of concurrent thumbnail generation processes (default: `4`)
+- `FILE_EXTENSIONS`: Comma-separated list of movie file extensions to scan (default: `mp4,mkv,avi,mov,mts,wmv`)
+
+### Server Settings
+- `SERVER_PORT`: Port for the web server (default: `8080`)
+- `SERVER_HOST`: Host for the web server (default: `0.0.0.0`)
+
+### Background Task Settings
+- `SCAN_INTERVAL`: Interval between background scans (default: `1h`)
+- `DEBUG`: Enable debug logging (default: `false`)
+
+## Web Interface
+
+The application provides two main pages:
+
+### Control Page (/)
+- Displays statistics about movies and thumbnails
+- Provides controls for manual scanning and cleanup
+- Shows lists of thumbnails by status
+
+### Slideshow Page (/slideshow)
+- Displays thumbnails in a fullscreen view
+- Keyboard shortcuts:
+  - Right arrow or Space: Next thumbnail
+  - Left arrow: Previous thumbnail
+  - 'M': Mark current thumbnail as viewed
+  - 'D': Delete current thumbnail/movie
+  - 'ESC': Return to control page
+
+## Development
+
+### Building from Source
+
+1. Install Go (version 1.21 or higher)
+2. Clone the repository
+3. Install dependencies:
+   ```bash
+   go mod download
+   ```
+4. Build the application:
+   ```bash
+   go build -o movie-thumbnailer ./cmd/movie-thumbnailer
+   ```
+
+### Running Tests
 
 ```bash
-docker run --rm \
-  -v "$(pwd)/movies:/movies:ro" \
-  -v "$(pwd)/thumbnails:/thumbnails" \
-  -v "$(pwd)/data:/data" \
-  -e MAX_WORKERS=8 \
-  -e INPUT_DIR=/movies \
-  -e OUTPUT_DIR=/thumbnails \
-  -e DB_FILE=/data/thumbnailer.db \
-  movie-thumbnailer scan
+go test ./...
 ```
 
-Available environment variables:
-- `INPUT_DIR`: Directory containing movie files (default: `/movies`)
-- `OUTPUT_DIR`: Directory for generated thumbnails (default: `/thumbnails`)
-- `DB_FILE`: Path to SQLite database file (default: `/data/thumbnailer.db`)
-- `MAX_WORKERS`: Maximum number of concurrent processes (default: `4`)
+## License
 
-The script is fully configurable through these environment variables, which take precedence over command-line arguments.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Advanced Usage
+## Acknowledgments
 
-### Using Different Directories
-
-```bash
-docker run --rm \
-  -v "/path/to/my/movies:/input:ro" \
-  -v "/path/to/my/thumbnails:/output" \
-  -v "/path/to/my/data:/data" \
-  -e INPUT_DIR=/input \
-  -e OUTPUT_DIR=/output \
-  movie-thumbnailer scan
-```
-
-### Deleting Orphaned Movies
-
-To delete movie files that don't have thumbnails during sync:
-
-```bash
-docker run --rm \
-  -v "$(pwd)/movies:/movies" \
-  -v "$(pwd)/thumbnails:/thumbnails" \
-  -v "$(pwd)/data:/data" \
-  movie-thumbnailer sync --delete-orphans
-```
-
-**Note**: For this operation, you must mount the movies directory with write permissions.
-
-## Troubleshooting
-
-### Permission Issues
-
-If you encounter permission issues, ensure that the directories you're mounting have appropriate permissions:
-
-```bash
-chmod -R 755 movies thumbnails data
-```
-
-### Database Corruption
-
-If the SQLite database becomes corrupted, you can delete it and restart:
-
-```bash
-rm data/thumbnailer.db
-docker-compose run movie-thumbnailer scan
-```
-
-## Security Considerations
-
-The container runs as a non-root user (`thumbnailer`) for improved security. The movie directory is mounted as read-only by default to prevent any accidental modifications to your original files.
+- Based on the original shell script implementation
+- Uses FFmpeg for thumbnail generation
