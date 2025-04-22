@@ -70,6 +70,10 @@ func (s *Server) routes() {
 	fs := http.FileServer(http.Dir(s.cfg.StaticDir))
 	s.router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", fs))
 
+	// Thumbnails
+	tfs := http.FileServer(http.Dir(s.cfg.ThumbnailsDir))
+	s.router.PathPrefix("/thumbnails/").Handler(http.StripPrefix("/thumbnails/", tfs))
+
 	// Control page routes
 	s.router.HandleFunc("/", s.handleControlPage).Methods("GET")
 	s.router.HandleFunc("/scan", s.handleScan).Methods("POST")

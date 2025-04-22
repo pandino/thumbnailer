@@ -30,10 +30,10 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 
 	// Render template with data
 	data := struct {
-		Stats     *models.Stats
+		Stats      *models.Stats
 		IsScanning bool
 	}{
-		Stats:     stats,
+		Stats:      stats,
 		IsScanning: s.scanner.IsScanning(),
 	}
 
@@ -350,12 +350,37 @@ func (s *Server) handleThumbnails(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
 	// Get thumbnail ID from URL
 	vars := mux.Vars(r)
-	// Removed unused variable 'id'
+	idStr := vars["id"]
 
-	// TODO: Implement getting a single thumbnail (would need to add GetByID to the DB)
+	// Convert ID from string to int64
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.log.WithError(err).WithField("id", idStr).Error("Invalid thumbnail ID")
+		http.Error(w, "Invalid thumbnail ID", http.StatusBadRequest)
+		return
+	}
 
+	// Get thumbnail by ID - we need to add this method to the database package
+	thumbnail, err := s.db.GetByID(id)
+	if err != nil {
+		s.log.WithError(err).WithField("id", id).Error("Failed to get thumbnail")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if thumbnail was found
+	if thumbnail == nil {
+		http.Error(w, "Thumbnail not found", http.StatusNotFound)
+		return
+	}
+
+	// Return thumbnail as JSON
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"error": "Not implemented"})
+	if err := json.NewEncoder(w).Encode(thumbnail); err != nil {
+		s.log.WithError(err).Error("Failed to encode thumbnail")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 }
 
 // handleNotFound handles 404 errors

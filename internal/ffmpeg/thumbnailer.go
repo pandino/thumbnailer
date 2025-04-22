@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -93,15 +94,27 @@ type VideoMetadata struct {
 	Height   int
 }
 
-// getVideoMetadata extracts metadata from a video file
+// FFProbeResponse represents the JSON structure returned by ffprobe
+type FFProbeResponse struct {
+	Streams []struct {
+		Width  int `json:"width"`
+		Height int `json:"height"`
+	} `json:"streams"`
+	Format struct {
+		Duration string `json:"duration"`
+	} `json:"format"`
+}
+
+// getVideoMetadata extracts metadata from a video file using JSON output format
 func (t *Thumbnailer) getVideoMetadata(ctx context.Context, moviePath string) (*VideoMetadata, error) {
-	// Use ffprobe to get video metadata
+	// Use ffprobe with JSON output format
 	cmd := exec.CommandContext(
 		ctx,
 		"ffprobe",
 		"-v", "error",
-		"-show_entries", "format=duration:stream=width,height",
-		"-of", "csv=p=0",
+		"-print_format", "json",
+		"-show_format",
+		"-show_streams",
 		"-select_streams", "v:0",
 		moviePath,
 	)
@@ -114,28 +127,33 @@ func (t *Thumbnailer) getVideoMetadata(ctx context.Context, moviePath string) (*
 		return nil, fmt.Errorf("ffprobe error: %v - %s", err, stderr.String())
 	}
 
-	// Parse output (format: duration,width,height)
-	output := strings.TrimSpace(stdout.String())
-	parts := strings.Split(output, ",")
-	if len(parts) < 3 {
-		return nil, fmt.Errorf("unexpected ffprobe output: %s", output)
+	// Parse JSON output
+	output := stdout.String()
+	t.log.WithField("ffprobe_output", output).Debug("FFprobe raw output")
+
+	var ffprobeData FFProbeResponse
+	if err := json.Unmarshal([]byte(output), &ffprobeData); err != nil {
+		return nil, fmt.Errorf("failed to parse ffprobe JSON output: %v", err)
 	}
 
-	// Parse duration
-	duration, err := strconv.ParseFloat(parts[0], 64)
+	// Validate streams data
+	if len(ffprobeData.Streams) == 0 {
+		return nil, fmt.Errorf("no video streams found in file")
+	}
+
+	// Extract width and height from the first video stream
+	width := ffprobeData.Streams[0].Width
+	height := ffprobeData.Streams[0].Height
+
+	// Extract duration from format data
+	duration, err := strconv.ParseFloat(ffprobeData.Format.Duration, 64)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse duration: %v", err)
 	}
 
-	// Parse width and height
-	width, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse width: %v", err)
-	}
-
-	height, err := strconv.Atoi(parts[2])
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse height: %v", err)
+	// Validate the parsed values
+	if width <= 0 || height <= 0 || duration <= 0 {
+		return nil, fmt.Errorf("invalid metadata values: width=%d, height=%d, duration=%f", width, height, duration)
 	}
 
 	return &VideoMetadata{

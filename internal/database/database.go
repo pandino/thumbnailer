@@ -56,7 +56,7 @@ func initSchema(db *sql.DB) error {
 			width INTEGER DEFAULT 0,
 			height INTEGER DEFAULT 0,
 			duration REAL DEFAULT 0,
-			error_message TEXT
+			error_message TEXT NOT NULL DEFAULT ''
 		);
 		
 		-- Index for faster queries by status
@@ -81,8 +81,8 @@ func initSchema(db *sql.DB) error {
 func (d *DB) Add(thumbnail *models.Thumbnail) error {
 	_, err := d.db.Exec(`
 		INSERT OR REPLACE INTO thumbnails 
-		(movie_path, movie_filename, thumbnail_path, status, viewed, width, height, duration) 
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		(movie_path, movie_filename, thumbnail_path, status, viewed, width, height, duration, error_message) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		thumbnail.MoviePath,
 		thumbnail.MovieFilename,
 		thumbnail.ThumbnailPath,
@@ -91,6 +91,7 @@ func (d *DB) Add(thumbnail *models.Thumbnail) error {
 		thumbnail.Width,
 		thumbnail.Height,
 		thumbnail.Duration,
+		thumbnail.ErrorMessage,
 	)
 	return err
 }
@@ -115,6 +116,31 @@ func (d *DB) MarkAsViewed(thumbnailPath string) error {
 		thumbnailPath,
 	)
 	return err
+}
+
+// GetByID retrieves a thumbnail by its ID
+func (d *DB) GetByID(id int64) (*models.Thumbnail, error) {
+	thumbnail := &models.Thumbnail{}
+	err := d.db.QueryRow(`
+		SELECT 
+			id, movie_path, movie_filename, thumbnail_path, 
+			created_at, updated_at, status, viewed, 
+			width, height, duration, error_message
+		FROM thumbnails 
+		WHERE id = ?`,
+		id,
+	).Scan(
+		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
+		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error fetching thumbnail with ID %d: %w", id, err)
+	}
+	return thumbnail, nil
 }
 
 // GetByMoviePath retrieves a thumbnail by its movie path
