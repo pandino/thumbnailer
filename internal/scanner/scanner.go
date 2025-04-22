@@ -8,32 +8,32 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/pandino/movie-thumbnailer-go/internal/config"
+	"github.com/pandino/movie-thumbnailer-go/internal/database"
+	"github.com/pandino/movie-thumbnailer-go/internal/ffmpeg"
+	"github.com/pandino/movie-thumbnailer-go/internal/models"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
-	"github.com/yourusername/movie-thumbnailer-go/internal/config"
-	"github.com/yourusername/movie-thumbnailer-go/internal/database"
-	"github.com/yourusername/movie-thumbnailer-go/internal/ffmpeg"
-	"github.com/yourusername/movie-thumbnailer-go/internal/models"
 )
 
 // Scanner handles scanning for movie files and managing thumbnails
 type Scanner struct {
-	cfg        *config.Config
-	db         *database.DB
+	cfg         *config.Config
+	db          *database.DB
 	thumbnailer *ffmpeg.Thumbnailer
-	log        *logrus.Logger
-	lock       sync.Mutex
-	isScanning bool
+	log         *logrus.Logger
+	lock        sync.Mutex
+	isScanning  bool
 }
 
 // New creates a new Scanner
 func New(cfg *config.Config, db *database.DB, log *logrus.Logger) *Scanner {
 	return &Scanner{
-		cfg:        cfg,
-		db:         db,
+		cfg:         cfg,
+		db:          db,
 		thumbnailer: ffmpeg.New(cfg, log),
-		log:        log,
-		isScanning: false,
+		log:         log,
+		isScanning:  false,
 	}
 }
 
@@ -76,7 +76,7 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 
 	for _, moviePath := range movieFiles {
 		moviePath := moviePath // Capture variable for goroutine
-		
+
 		// Check if thumbnail already exists and is successful
 		movieFilename := filepath.Base(moviePath)
 		thumbnail, err := s.db.GetByMoviePath(movieFilename)
@@ -259,7 +259,7 @@ func (s *Scanner) cleanupOrphanedThumbnails(ctx context.Context) error {
 		// Check if file is in the database
 		if !thumbnailMap[file.Name()] {
 			s.log.WithField("thumbnail", file.Name()).Info("Orphaned thumbnail found, deleting")
-			
+
 			// Delete the file
 			thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, file.Name())
 			if err := os.Remove(thumbnailPath); err != nil {

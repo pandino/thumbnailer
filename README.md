@@ -21,7 +21,7 @@ A Go application for generating and managing thumbnail mosaics from movie files.
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/movie-thumbnailer-go.git
+   git clone https://github.com/pandino/movie-thumbnailer-go.git
    cd movie-thumbnailer-go
    ```
 

@@ -7,12 +7,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pandino/movie-thumbnailer-go/internal/config"
+	"github.com/pandino/movie-thumbnailer-go/internal/database"
+	"github.com/pandino/movie-thumbnailer-go/internal/scanner"
+	"github.com/pandino/movie-thumbnailer-go/internal/server"
+	"github.com/pandino/movie-thumbnailer-go/internal/worker"
 	"github.com/sirupsen/logrus"
-	"github.com/yourusername/movie-thumbnailer-go/internal/config"
-	"github.com/yourusername/movie-thumbnailer-go/internal/database"
-	"github.com/yourusername/movie-thumbnailer-go/internal/scanner"
-	"github.com/yourusername/movie-thumbnailer-go/internal/server"
-	"github.com/yourusername/movie-thumbnailer-go/internal/worker"
 )
 
 func main() {
@@ -32,7 +32,7 @@ func main() {
 	}
 
 	log.Info("Starting Movie Thumbnailer")
-	log.Debugf("Configuration: Movies=%s, Thumbnails=%s, Data=%s", 
+	log.Debugf("Configuration: Movies=%s, Thumbnails=%s, Data=%s",
 		cfg.MoviesDir, cfg.ThumbnailsDir, cfg.DataDir)
 
 	// Create directories

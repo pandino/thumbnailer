@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/pandino/movie-thumbnailer-go/internal/config"
+	"github.com/pandino/movie-thumbnailer-go/internal/database"
+	"github.com/pandino/movie-thumbnailer-go/internal/scanner"
 	"github.com/sirupsen/logrus"
-	"github.com/yourusername/movie-thumbnailer-go/internal/config"
-	"github.com/yourusername/movie-thumbnailer-go/internal/database"
-	"github.com/yourusername/movie-thumbnailer-go/internal/scanner"
 )
 
 // Server handles HTTP requests for the application

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/yourusername/movie-thumbnailer-go/internal/models"
+	"github.com/pandino/movie-thumbnailer-go/internal/models"
 )
 
 // DB represents the database connection and operations

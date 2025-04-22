@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pandino/movie-thumbnailer-go/internal/config"
+	"github.com/pandino/movie-thumbnailer-go/internal/models"
 	"github.com/sirupsen/logrus"
-	"github.com/yourusername/movie-thumbnailer-go/internal/config"
-	"github.com/yourusername/movie-thumbnailer-go/internal/models"
 )
 
 // Thumbnailer creates thumbnail grids from movie files using ffmpeg
@@ -219,7 +219,7 @@ func (t *Thumbnailer) generateThumbnailGrid(ctx context.Context, moviePath, outp
 		"-ss", "30", // Skip first 30 seconds
 		"-skip_frame", "nokey",
 		"-i", moviePath,
-		"-vf", fmt.Sprintf("select='eq(pict_type,I)',select='not(mod(n,%d))',scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2,tile=%dx%d:padding=4:margin=4", 
+		"-vf", fmt.Sprintf("select='eq(pict_type,I)',select='not(mod(n,%d))',scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2,tile=%dx%d:padding=4:margin=4",
 			interval, t.cfg.GridCols, t.cfg.GridRows),
 		"-frames:v", "1",
 		"-q:v", "2",

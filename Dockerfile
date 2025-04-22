@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ COPY . .
 # Build the application
 RUN CGO_ENABLED=1 GOOS=linux go build -a -o movie-thumbnailer ./cmd/movie-thumbnailer
 
-FROM alpine:3.18
+FROM alpine:3.21
 
 LABEL maintainer="Movie Thumbnailer"
 LABEL description="A Go application for generating movie thumbnail mosaics with web interface"

@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
+	"github.com/pandino/movie-thumbnailer-go/internal/config"
+	"github.com/pandino/movie-thumbnailer-go/internal/scanner"
 	"github.com/sirupsen/logrus"
-	"github.com/yourusername/movie-thumbnailer-go/internal/config"
-	"github.com/yourusername/movie-thumbnailer-go/internal/scanner"
 )
 
 // Worker manages background tasks for the application
