@@ -201,13 +201,14 @@ func (d *DB) GetByThumbnailPath(thumbnailPath string) (*models.Thumbnail, error)
 // GetDeletedThumbnails retrieves all thumbnails marked for deletion
 func (d *DB) GetDeletedThumbnails() ([]*models.Thumbnail, error) {
 	rows, err := d.db.Query(`
-		SELECT 
-			id, movie_path, movie_filename, thumbnail_path, 
-			created_at, updated_at, status, viewed,
-			width, height, duration, error_message
-		FROM thumbnails 
-		WHERE status = 'deleted'
-		ORDER BY created_at DESC`,
+        SELECT 
+            id, movie_path, movie_filename, thumbnail_path, 
+            created_at, updated_at, status, viewed,
+            width, height, duration, error_message
+        FROM thumbnails 
+        WHERE status = 'deleted'
+        ORDER BY updated_at DESC
+        LIMIT 10`,
 	)
 	if err != nil {
 		return nil, err
@@ -329,8 +330,9 @@ func (d *DB) GetUnviewedThumbnails() ([]*models.Thumbnail, error) {
             created_at, updated_at, status, viewed,
             width, height, duration, error_message
         FROM thumbnails 
-        WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
-        ORDER BY created_at DESC`,
+        WHERE status = 'success' AND viewed = 0
+        ORDER BY updated_at DESC
+        LIMIT 10`,
 	)
 	if err != nil {
 		return nil, err
@@ -438,6 +440,16 @@ func (d *DB) DeleteThumbnail(moviePath string) error {
 	return err
 }
 
+// RestoreFromDeletion restores a thumbnail from deletion status back to success
+func (d *DB) RestoreFromDeletion(moviePath string) error {
+	_, err := d.db.Exec(`
+        UPDATE thumbnails 
+        SET status = 'success', viewed = 0
+        WHERE movie_path = ? AND status = 'deleted'`,
+		moviePath,
+	)
+	return err
+}
 func (d *DB) GetStats() (*models.Stats, error) {
 	stats := &models.Stats{}
 

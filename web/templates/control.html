@@ -97,7 +97,7 @@
 
             {{if .Stats.Unviewed}}
             <section class="thumbnails-panel">
-                <h2>Unviewed Thumbnails ({{.Stats.Unviewed}})</h2>
+                <h2>Recent Unviewed Thumbnails (Showing {{if lt .Stats.Unviewed 10}}{{.Stats.Unviewed}}{{else}}10{{end}} of {{.Stats.Unviewed}})</h2>
                 <a href="/slideshow" class="start-slideshow">Start Slideshow</a>
                 <div id="unviewed-thumbnails" class="thumbnails-grid">
                     <div class="loading">Loading...</div>
@@ -105,18 +105,9 @@
             </section>
             {{end}}
 
-            {{if .Stats.Error}}
-            <section class="thumbnails-panel error-panel">
-                <h2>Error Thumbnails ({{.Stats.Error}})</h2>
-                <div id="error-thumbnails" class="thumbnails-grid">
-                    <div class="loading">Loading...</div>
-                </div>
-            </section>
-            {{end}}
-
             {{if .Stats.Deleted}}
             <section class="thumbnails-panel deletions-panel">
-                <h2>Pending Deletion ({{.Stats.Deleted}})</h2>
+                <h2>Recently Marked for Deletion (Showing {{if lt .Stats.Deleted 10}}{{.Stats.Deleted}}{{else}}10{{end}} of {{.Stats.Deleted}})</h2>
                 <div class="deletions-info">
                     <span class="deletions-count">These items will be deleted during the next scheduled cleanup job</span>
                     <form action="/process-deletions" method="post">
@@ -126,6 +117,15 @@
                     </form>
                 </div>
                 <div id="deleted-thumbnails" class="thumbnails-grid">
+                    <div class="loading">Loading...</div>
+                </div>
+            </section>
+            {{end}}
+
+            {{if .Stats.Error}}
+            <section class="thumbnails-panel error-panel">
+                <h2>Error Thumbnails ({{.Stats.Error}})</h2>
+                <div id="error-thumbnails" class="thumbnails-grid">
                     <div class="loading">Loading...</div>
                 </div>
             </section>

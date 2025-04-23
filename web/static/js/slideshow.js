@@ -38,10 +38,8 @@ function setupKeyboardShortcuts() {
                 
                 case 'd':
                 case 'D':
-                    // Delete thumbnail (with confirmation)
-                    if (confirm('Are you sure you want to delete this movie?')) {
-                        deleteMovie();
-                    }
+                    // Delete thumbnail (without confirmation)
+                    deleteMovie();
                     break;
                 
                 case 'Escape':
@@ -80,62 +78,18 @@ function markAsViewed() {
     }
 }
 
+// Delete movie without confirmation
 function deleteMovie() {
-    showCustomConfirmation(
-        "Confirm Deletion",
-        "This will mark the movie for deletion. The actual files will be removed during the next cleanup job. Continue?",
-        function() {
-            const form = document.getElementById('delete-form');
-            if (form) {
-                submitFormAjax(form, function() {
-                    // Navigate to next after marking for deletion
-                    navigateToNext();
-                });
-            }
-        }
-    );
+    const form = document.getElementById('delete-form');
+    if (form) {
+        submitFormAjax(form, function() {
+            // Navigate to next after marking for deletion
+            navigateToNext();
+        });
+    }
 }
 
-function showCustomConfirmation(title, message, onConfirm) {
-    // Create dialog element
-    const dialog = document.createElement('div');
-    dialog.className = 'confirm-dialog';
-    
-    // Build dialog content
-    dialog.innerHTML = `
-        <h3 class="confirm-dialog-title">${title}</h3>
-        <p class="confirm-dialog-message">${message}</p>
-        <div class="confirm-dialog-buttons">
-            <button class="confirm-button cancel">Cancel</button>
-            <button class="confirm-button confirm">Delete</button>
-        </div>
-    `;
-    
-    // Add to body
-    document.body.appendChild(dialog);
-    
-    // Handle button clicks
-    const cancelButton = dialog.querySelector('.confirm-button.cancel');
-    const confirmButton = dialog.querySelector('.confirm-button.confirm');
-    
-    cancelButton.addEventListener('click', function() {
-        document.body.removeChild(dialog);
-    });
-    
-    confirmButton.addEventListener('click', function() {
-        onConfirm();
-        document.body.removeChild(dialog);
-    });
-    
-    // Close on Escape key
-    document.addEventListener('keydown', function closeOnEscape(e) {
-        if (e.key === 'Escape') {
-            document.body.removeChild(dialog);
-            document.removeEventListener('keydown', closeOnEscape);
-        }
-    });
-}
-
+// Update the setupAjaxForms function to remove confirmation
 function setupAjaxForms() {
     // Mark as viewed form
     const viewForm = document.getElementById('mark-viewed-form');
@@ -149,21 +103,15 @@ function setupAjaxForms() {
         });
     }
     
-    // Delete form
+    // Delete form - no confirmation
     const deleteForm = document.getElementById('delete-form');
     if (deleteForm) {
         deleteForm.addEventListener('submit', function(e) {
             e.preventDefault();
-            showCustomConfirmation(
-                "Confirm Deletion",
-                "This will mark the movie for deletion. The actual files will be removed during the next cleanup job. Continue?",
-                function() {
-                    submitFormAjax(deleteForm, function() {
-                        // Navigate to next after marking for deletion
-                        navigateToNext();
-                    });
-                }
-            );
+            submitFormAjax(this, function() {
+                // Navigate to next after marking for deletion
+                navigateToNext();
+            });
         });
     }
 }

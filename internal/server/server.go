@@ -80,6 +80,7 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/cleanup", s.handleCleanup).Methods("POST")
 	s.router.HandleFunc("/reset-views", s.handleResetViews).Methods("POST")
 	s.router.HandleFunc("/process-deletions", s.handleProcessDeletions).Methods("POST")
+	s.router.HandleFunc("/undo-delete", s.handleUndoDelete).Methods("POST")
 
 	// Slideshow routes
 	s.router.HandleFunc("/slideshow", s.handleSlideshow).Methods("GET")

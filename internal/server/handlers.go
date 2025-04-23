@@ -381,6 +381,54 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/slideshow/next", http.StatusSeeOther)
 }
 
+// handleUndoDelete restores a movie that was marked for deletion
+func (s *Server) handleUndoDelete(w http.ResponseWriter, r *http.Request) {
+	// Get movie path from form
+	moviePath := r.FormValue("path")
+	if moviePath == "" {
+		http.Error(w, "Movie path is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get the thumbnail record
+	thumbnail, err := s.db.GetByMoviePath(moviePath)
+	if err != nil {
+		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to get thumbnail")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if thumbnail == nil {
+		http.Error(w, "Movie not found", http.StatusNotFound)
+		return
+	}
+
+	// Make sure it's marked as deleted
+	if thumbnail.Status != models.StatusDeleted {
+		http.Error(w, "Movie is not marked for deletion", http.StatusBadRequest)
+		return
+	}
+
+	// Restore the thumbnail by setting status back to success
+	if err := s.db.RestoreFromDeletion(moviePath); err != nil {
+		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to restore from deletion")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	s.log.WithField("movie", moviePath).Info("Restored movie from deletion")
+
+	// If ajax request, return JSON response
+	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		return
+	}
+
+	// Otherwise redirect to control page
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 // handleStats returns statistics as JSON
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := s.scanner.GetStats()

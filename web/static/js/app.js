@@ -43,7 +43,6 @@ function loadThumbnails(containerId, status, viewed = null) {
         });
 }
 
-// Render thumbnails in the container
 function renderThumbnails(container, thumbnails) {
     if (!thumbnails || thumbnails.length === 0) {
         container.innerHTML = '<div class="no-results">No thumbnails found</div>';
@@ -53,14 +52,18 @@ function renderThumbnails(container, thumbnails) {
     // Clear container
     container.innerHTML = '';
 
-    // Limit to first 12 thumbnails for performance
-    const displayThumbnails = thumbnails.slice(0, 12);
-    
     // Check if this is the deleted-thumbnails container
     const isDeletedContainer = container.id === 'deleted-thumbnails';
+    
+    // Sort by created_at or updated_at for more recent items if needed
+    if (isDeletedContainer || container.id === 'unviewed-thumbnails') {
+        thumbnails.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+        // Limit to 10 most recent items
+        thumbnails = thumbnails.slice(0, 10);
+    }
 
     // Add each thumbnail
-    displayThumbnails.forEach(thumbnail => {
+    thumbnails.forEach(thumbnail => {
         const item = document.createElement('div');
         item.className = 'thumbnail-item';
         if (isDeletedContainer) {
@@ -69,15 +72,18 @@ function renderThumbnails(container, thumbnails) {
         
         let itemContent = '';
         if (isDeletedContainer) {
-            // For deleted items, don't link to slideshow
+            // For deleted items, don't link to slideshow but add undo button
             itemContent = `
-                <img src="/thumbnails/${thumbnail.thumbnail_path}" alt="${thumbnail.movie_filename}">
-                <div class="thumbnail-info">
-                    <div class="thumbnail-title">${thumbnail.movie_filename}</div>
-                    <div class="thumbnail-meta">
-                        <span>${formatDuration(thumbnail.duration)}</span>
-                        <span>${formatDate(thumbnail.created_at)}</span>
+                <div class="thumbnail-wrapper">
+                    <img src="/thumbnails/${thumbnail.thumbnail_path}" alt="${thumbnail.movie_filename}">
+                    <div class="thumbnail-info">
+                        <div class="thumbnail-title">${thumbnail.movie_filename}</div>
+                        <div class="thumbnail-meta">
+                            <span>${formatDuration(thumbnail.duration)}</span>
+                            <span>${formatDate(thumbnail.updated_at)}</span>
+                        </div>
                     </div>
+                    <button class="undo-delete-btn" data-movie-path="${thumbnail.movie_path}" title="Undo deletion">↩️ Undo</button>
                 </div>
             `;
         } else {
@@ -100,19 +106,60 @@ function renderThumbnails(container, thumbnails) {
         container.appendChild(item);
     });
 
-    // Add "Show All" link if there are more thumbnails
-    if (thumbnails.length > 12) {
-        const showMore = document.createElement('div');
-        showMore.className = 'thumbnail-item show-more';
-        showMore.innerHTML = `
-            <div class="show-more-content">
-                <span>+ ${thumbnails.length - 12} more</span>
-                <button>Show All</button>
-            </div>
-        `;
-        container.appendChild(showMore);
+    // If this is the deleted items container, add event listeners for undo buttons
+    if (isDeletedContainer) {
+        const undoButtons = container.querySelectorAll('.undo-delete-btn');
+        undoButtons.forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.preventDefault();
+                const moviePath = this.getAttribute('data-movie-path');
+                undoDeleteMovie(moviePath, this);
+            });
+        });
     }
 }
+
+// Add function to handle undo deletion
+function undoDeleteMovie(moviePath, buttonElement) {
+    // Disable the button while processing
+    buttonElement.disabled = true;
+    buttonElement.textContent = "Undoing...";
+    
+    // Send AJAX request to restore the movie
+    fetch('/undo-delete', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: `path=${encodeURIComponent(moviePath)}`
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            // Reload the deleted thumbnails container
+            loadThumbnails('deleted-thumbnails', 'deleted');
+            // Reload the unviewed thumbnails container (the item will appear there)
+            loadThumbnails('unviewed-thumbnails', 'success', '0');
+            // Show success message
+            showFlashMessage("Movie restored successfully");
+        } else {
+            throw new Error(data.message || 'Failed to restore movie');
+        }
+    })
+    .catch(error => {
+        console.error('Error undoing deletion:', error);
+        buttonElement.disabled = false;
+        buttonElement.textContent = "↩️ Undo";
+        showFlashMessage("Failed to restore movie: " + error.message, "error");
+    });
+}
+
 
 // Format duration in seconds to MM:SS or HH:MM:SS
 function formatDuration(seconds) {
@@ -169,9 +216,12 @@ function checkFlashMessages() {
 }
 
 // Show flash message
-function showFlashMessage(message) {
+function showFlashMessage(message, type = '') {
     const flashDiv = document.createElement('div');
     flashDiv.className = 'flash-message';
+    if (type) {
+        flashDiv.classList.add(type);
+    }
     flashDiv.textContent = message;
     
     document.body.appendChild(flashDiv);
