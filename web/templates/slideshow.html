@@ -13,17 +13,20 @@
             <div class="slideshow-info">
                 <span class="movie-title">{{.Thumbnail.MovieFilename}}</span>
                 <span class="slideshow-counter">Thumbnail {{.Current}} of {{.Total}}</span>
+                {{if eq .Thumbnail.Status "deleted"}}
+                <span class="deletion-status">Pending Deletion</span>
+                {{end}}
             </div>
             <div class="slideshow-actions">
                 <form action="/slideshow/mark-viewed" method="post" id="mark-viewed-form">
                     <input type="hidden" name="path" value="{{.Thumbnail.ThumbnailPath}}">
-                    <button type="submit" class="action-icon-button" title="Mark as viewed">
+                    <button type="submit" class="action-icon-button" title="Mark as viewed" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
                         <span class="action-icon">👁️</span>
                     </button>
                 </form>
-                <form action="/slideshow/delete" method="post" id="delete-form" onsubmit="return confirm('Are you sure you want to delete this movie?');">
+                <form action="/slideshow/delete" method="post" id="delete-form" onsubmit="return confirm('Are you sure you want to mark this movie for deletion? It will be deleted during the next cleanup job.');">
                     <input type="hidden" name="path" value="{{.Thumbnail.MoviePath}}">
-                    <button type="submit" class="action-icon-button danger" title="Delete movie">
+                    <button type="submit" class="action-icon-button danger" title="Delete movie" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
                         <span class="action-icon">🗑️</span>
                     </button>
                 </form>
@@ -31,7 +34,7 @@
         </div>
 
         <div class="thumbnail-display">
-            <img src="/thumbnails/{{.Thumbnail.ThumbnailPath}}" alt="{{.Thumbnail.MovieFilename}}" class="thumbnail-image">
+            <img src="/thumbnails/{{.Thumbnail.ThumbnailPath}}" alt="{{.Thumbnail.MovieFilename}}" class="thumbnail-image {{if eq .Thumbnail.Status "deleted"}}pending-deletion{{end}}">
         </div>
 
         <div class="movie-details">

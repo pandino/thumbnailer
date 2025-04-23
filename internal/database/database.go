@@ -118,6 +118,17 @@ func (d *DB) MarkAsViewed(thumbnailPath string) error {
 	return err
 }
 
+// MarkForDeletion marks a thumbnail for deletion without actually deleting it
+func (d *DB) MarkForDeletion(moviePath string) error {
+	_, err := d.db.Exec(`
+		UPDATE thumbnails 
+		SET status = 'deleted'
+		WHERE movie_path = ?`,
+		moviePath,
+	)
+	return err
+}
+
 // GetByID retrieves a thumbnail by its ID
 func (d *DB) GetByID(id int64) (*models.Thumbnail, error) {
 	thumbnail := &models.Thumbnail{}
@@ -187,6 +198,25 @@ func (d *DB) GetByThumbnailPath(thumbnailPath string) (*models.Thumbnail, error)
 	return thumbnail, err
 }
 
+// GetDeletedThumbnails retrieves all thumbnails marked for deletion
+func (d *DB) GetDeletedThumbnails() ([]*models.Thumbnail, error) {
+	rows, err := d.db.Query(`
+		SELECT 
+			id, movie_path, movie_filename, thumbnail_path, 
+			created_at, updated_at, status, viewed,
+			width, height, duration, error_message
+		FROM thumbnails 
+		WHERE status = 'deleted'
+		ORDER BY created_at DESC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanThumbnails(rows)
+}
+
 // GetFirstUnviewedThumbnail gets the first unviewed thumbnail
 func (d *DB) GetFirstUnviewedThumbnail() (*models.Thumbnail, error) {
 	thumbnail := &models.Thumbnail{}
@@ -196,7 +226,7 @@ func (d *DB) GetFirstUnviewedThumbnail() (*models.Thumbnail, error) {
             created_at, updated_at, status, viewed,
             width, height, duration, error_message
         FROM thumbnails 
-        WHERE status = 'success' AND viewed = 0
+        WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
         ORDER BY id ASC
         LIMIT 1
     `).Scan(
@@ -221,7 +251,7 @@ func (d *DB) GetNextUnviewedThumbnail(currentID int64) (*models.Thumbnail, error
             created_at, updated_at, status, viewed,
             width, height, duration, error_message
         FROM thumbnails 
-        WHERE status = 'success' AND viewed = 0 AND id > ?
+        WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND id > ?
         ORDER BY id ASC
         LIMIT 1
     `, currentID).Scan(
@@ -251,7 +281,7 @@ func (d *DB) GetPreviousThumbnail(currentID int64) (*models.Thumbnail, error) {
             created_at, updated_at, status, viewed,
             width, height, duration, error_message
         FROM thumbnails 
-        WHERE status = 'success' AND id < ?
+        WHERE status = 'success' AND status != 'deleted' AND id < ?
         ORDER BY id DESC
         LIMIT 1
     `, currentID).Scan(
@@ -273,7 +303,7 @@ func (d *DB) GetUnviewedThumbnailCount() (int, error) {
 	err := d.db.QueryRow(`
         SELECT COUNT(*)
         FROM thumbnails 
-        WHERE status = 'success' AND viewed = 0
+        WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
     `).Scan(&count)
 
 	return count, err
@@ -285,7 +315,7 @@ func (d *DB) GetThumbnailPosition(id int64) (int, error) {
 	err := d.db.QueryRow(`
         SELECT COUNT(*) + 1
         FROM thumbnails
-        WHERE status = 'success' AND viewed = 0 AND id < ?
+        WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND id < ?
     `, id).Scan(&position)
 
 	return position, err
@@ -294,13 +324,13 @@ func (d *DB) GetThumbnailPosition(id int64) (int, error) {
 // GetUnviewedThumbnails retrieves all unviewed thumbnails
 func (d *DB) GetUnviewedThumbnails() ([]*models.Thumbnail, error) {
 	rows, err := d.db.Query(`
-		SELECT 
-			id, movie_path, movie_filename, thumbnail_path, 
-			created_at, updated_at, status, viewed,
-			width, height, duration, error_message
-		FROM thumbnails 
-		WHERE status = 'success' AND viewed = 0
-		ORDER BY created_at DESC`,
+        SELECT 
+            id, movie_path, movie_filename, thumbnail_path, 
+            created_at, updated_at, status, viewed,
+            width, height, duration, error_message
+        FROM thumbnails 
+        WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
+        ORDER BY created_at DESC`,
 	)
 	if err != nil {
 		return nil, err
@@ -408,7 +438,6 @@ func (d *DB) DeleteThumbnail(moviePath string) error {
 	return err
 }
 
-// GetStats retrieves statistics about the thumbnails
 func (d *DB) GetStats() (*models.Stats, error) {
 	stats := &models.Stats{}
 
@@ -419,7 +448,8 @@ func (d *DB) GetStats() (*models.Stats, error) {
 			SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error,
 			SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
 			SUM(CASE WHEN status = 'success' AND viewed = 1 THEN 1 ELSE 0 END) as viewed,
-			SUM(CASE WHEN status = 'success' AND viewed = 0 THEN 1 ELSE 0 END) as unviewed
+			SUM(CASE WHEN status = 'success' AND viewed = 0 THEN 1 ELSE 0 END) as unviewed,
+			SUM(CASE WHEN status = 'deleted' THEN 1 ELSE 0 END) as deleted
 		FROM thumbnails
 	`).Scan(
 		&stats.Total,
@@ -428,6 +458,7 @@ func (d *DB) GetStats() (*models.Stats, error) {
 		&stats.Pending,
 		&stats.Viewed,
 		&stats.Unviewed,
+		&stats.Deleted,
 	)
 
 	return stats, err

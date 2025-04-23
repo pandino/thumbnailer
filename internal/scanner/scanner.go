@@ -234,11 +234,18 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string) error {
 	return nil
 }
 
-// CleanupOrphans removes database entries for missing movies and orphaned thumbnails
+// CleanupOrphans removes database entries for missing movies, orphaned thumbnails,
+// and processes items marked for deletion
 func (s *Scanner) CleanupOrphans(ctx context.Context) error {
-	s.log.Info("Cleaning up orphaned entries and thumbnails")
+	s.log.Info("Cleaning up orphaned entries, thumbnails, and processing deletion queue")
 
-	// Get all thumbnails from database
+	// First, process items marked for deletion
+	if err := s.processDeletedItems(ctx); err != nil {
+		s.log.WithError(err).Error("Error processing deleted items")
+		// Continue with other cleanup steps
+	}
+
+	// Get all thumbnails from database (except deleted ones that were just processed)
 	thumbnails, err := s.db.GetAllThumbnails()
 	if err != nil {
 		return fmt.Errorf("failed to get thumbnails: %w", err)
@@ -248,6 +255,11 @@ func (s *Scanner) CleanupOrphans(ctx context.Context) error {
 
 	// Check each thumbnail
 	for _, thumbnail := range thumbnails {
+		// Skip already deleted thumbnails
+		if thumbnail.Status == models.StatusDeleted {
+			continue
+		}
+
 		// Check if movie file exists
 		moviePath := filepath.Join(s.cfg.MoviesDir, thumbnail.MoviePath)
 		if _, err := os.Stat(moviePath); os.IsNotExist(err) {
@@ -330,6 +342,54 @@ func (s *Scanner) cleanupOrphanedThumbnails(ctx context.Context) error {
 	}
 
 	s.log.Infof("Thumbnail cleanup completed: deleted %d orphaned thumbnail files", orphanedCount)
+	return nil
+}
+
+// processDeletedItems processes all items marked for deletion
+func (s *Scanner) processDeletedItems(ctx context.Context) error {
+	// Get all thumbnails marked for deletion
+	thumbnails, err := s.db.GetDeletedThumbnails()
+	if err != nil {
+		return fmt.Errorf("failed to get deleted thumbnails: %w", err)
+	}
+
+	s.log.Infof("Processing %d items marked for deletion", len(thumbnails))
+
+	for _, thumbnail := range thumbnails {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// Delete the thumbnail file if it exists
+			if thumbnail.ThumbnailPath != "" {
+				thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, thumbnail.ThumbnailPath)
+				if _, err := os.Stat(thumbnailPath); err == nil {
+					if err := os.Remove(thumbnailPath); err != nil {
+						s.log.WithError(err).WithField("thumbnail", thumbnailPath).Error("Failed to delete thumbnail file")
+					} else {
+						s.log.WithField("thumbnail", thumbnailPath).Info("Deleted thumbnail file")
+					}
+				}
+			}
+
+			// Delete the movie file if it exists
+			fullMoviePath := filepath.Join(s.cfg.MoviesDir, thumbnail.MoviePath)
+			if _, err := os.Stat(fullMoviePath); err == nil {
+				if err := os.Remove(fullMoviePath); err != nil {
+					s.log.WithError(err).WithField("movie", fullMoviePath).Error("Failed to delete movie file")
+					// Don't remove from database on error so we can retry later
+					continue
+				}
+				s.log.WithField("movie", fullMoviePath).Info("Deleted movie file")
+			}
+
+			// Remove from database
+			if err := s.db.DeleteThumbnail(thumbnail.MoviePath); err != nil {
+				s.log.WithError(err).WithField("movie", thumbnail.MoviePath).Error("Failed to delete from database")
+			}
+		}
+	}
+
 	return nil
 }
 

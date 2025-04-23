@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -94,6 +95,42 @@ func (s *Server) handleResetViews(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:  "flash",
 		Value: "Reset viewed status for " + strconv.FormatInt(count, 10) + " thumbnails",
+		Path:  "/",
+	})
+
+	// Redirect back to control page
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// handleProcessDeletions triggers immediate processing of the deletion queue
+func (s *Server) handleProcessDeletions(w http.ResponseWriter, r *http.Request) {
+	if s.scanner.IsScanning() {
+		http.Error(w, "Cannot process deletions while scanning", http.StatusConflict)
+		return
+	}
+
+	// Get the count of deleted items before processing
+	stats, err := s.scanner.GetStats()
+	if err != nil {
+		s.log.WithError(err).Error("Failed to get stats")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	deletedCount := stats.Deleted
+
+	// Process the deletion queue
+	go func() {
+		ctx := context.Background()
+		if err := s.scanner.CleanupOrphans(ctx); err != nil {
+			s.log.WithError(err).Error("Process deletions failed")
+		}
+	}()
+
+	// Set success message in flash
+	http.SetCookie(w, &http.Cookie{
+		Name:  "flash",
+		Value: fmt.Sprintf("Processing %d items for deletion in the background", deletedCount),
 		Path:  "/",
 	})
 
@@ -205,7 +242,7 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 	// Mark current thumbnail as viewed (if we have a current ID)
 	if currentID > 0 {
 		thumbnail, err := s.db.GetByID(currentID)
-		if err == nil && thumbnail != nil {
+		if err == nil && thumbnail != nil && thumbnail.Status != models.StatusDeleted {
 			err = s.db.MarkAsViewed(thumbnail.ThumbnailPath)
 			if err != nil {
 				s.log.WithError(err).Error("Failed to mark as viewed")
@@ -302,7 +339,7 @@ func (s *Server) handleMarkViewed(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/slideshow/next", http.StatusSeeOther)
 }
 
-// handleDelete deletes a movie and its thumbnail
+// handleDelete marks a movie and its thumbnail for deletion
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	// Get movie path from form
 	moviePath := r.FormValue("path")
@@ -311,12 +348,27 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete movie and thumbnail
-	if err := s.scanner.DeleteMovie(moviePath); err != nil {
-		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to delete movie")
+	// Get the thumbnail record
+	thumbnail, err := s.db.GetByMoviePath(moviePath)
+	if err != nil {
+		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to get thumbnail")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	if thumbnail == nil {
+		http.Error(w, "Movie not found", http.StatusNotFound)
+		return
+	}
+
+	// Mark for deletion instead of deleting immediately
+	if err := s.db.MarkForDeletion(moviePath); err != nil {
+		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to mark for deletion")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	s.log.WithField("movie", moviePath).Info("Marked movie for deletion")
 
 	// If ajax request, return JSON response
 	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
@@ -360,6 +412,8 @@ func (s *Server) handleThumbnails(w http.ResponseWriter, r *http.Request) {
 		thumbnails, err = s.db.GetPendingThumbnails()
 	} else if status == "error" {
 		thumbnails, err = s.db.GetErrorThumbnails()
+	} else if status == "deleted" {
+		thumbnails, err = s.db.GetDeletedThumbnails()
 	} else {
 		thumbnails, err = s.db.GetAllThumbnails()
 	}

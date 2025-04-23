@@ -29,6 +29,7 @@ type Stats struct {
 	Pending  int `json:"pending"`
 	Viewed   int `json:"viewed"`
 	Unviewed int `json:"unviewed"`
+	Deleted  int `json:"deleted"`
 }
 
 // Constants for thumbnail status values
@@ -77,6 +78,11 @@ func (t *Thumbnail) IsPending() bool {
 // IsError returns true if the thumbnail generation resulted in an error
 func (t *Thumbnail) IsError() bool {
 	return t.Status == StatusError
+}
+
+// IsDeleted returns true if the thumbnail is marked for deletion
+func (t *Thumbnail) IsDeleted() bool {
+	return t.Status == StatusDeleted
 }
 
 // GetDurationFormatted returns the duration in a human-readable format

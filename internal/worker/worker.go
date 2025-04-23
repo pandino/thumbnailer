@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/pandino/movie-thumbnailer-go/internal/config"
@@ -38,15 +39,20 @@ func (w *Worker) Start(ctx context.Context) {
 	}()
 
 	// Set up ticker for periodic scans
-	ticker := time.NewTicker(w.cfg.ScanInterval)
-	defer ticker.Stop()
+	scanTicker := time.NewTicker(w.cfg.ScanInterval)
+	defer scanTicker.Stop()
+
+	// Set up ticker for periodic cleanups (every 6 hours)
+	cleanupInterval := 6 * time.Hour
+	cleanupTicker := time.NewTicker(cleanupInterval)
+	defer cleanupTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			w.log.Info("Worker shutting down")
 			return
-		case <-ticker.C:
+		case <-scanTicker.C:
 			// Skip if a scan is already in progress
 			if w.scanner.IsScanning() {
 				w.log.Info("Skipping scheduled scan because a scan is already in progress")
@@ -56,6 +62,17 @@ func (w *Worker) Start(ctx context.Context) {
 			w.log.Info("Running scheduled scan")
 			if err := w.scanner.ScanMovies(ctx); err != nil {
 				w.log.WithError(err).Error("Scheduled scan failed")
+			}
+		case <-cleanupTicker.C:
+			// Skip if a scan is already in progress
+			if w.scanner.IsScanning() {
+				w.log.Info("Skipping scheduled cleanup because a scan is in progress")
+				continue
+			}
+
+			w.log.Info("Running scheduled cleanup")
+			if err := w.scanner.CleanupOrphans(ctx); err != nil {
+				w.log.WithError(err).Error("Scheduled cleanup failed")
 			}
 		}
 	}
@@ -78,15 +95,15 @@ func (w *Worker) PerformScan(ctx context.Context) error {
 	return nil
 }
 
-// PerformCleanup performs a cleanup of orphaned entries and thumbnails
+// PerformCleanup performs a cleanup of orphaned entries, thumbnails, and processes items marked for deletion
 func (w *Worker) PerformCleanup(ctx context.Context) error {
 	if w.scanner.IsScanning() {
-		return nil
+		return fmt.Errorf("cannot perform cleanup while scan is in progress")
 	}
 
 	w.log.Info("Triggering manual cleanup")
 	go func() {
-		if err := w.scanner.ScanMovies(ctx); err != nil {
+		if err := w.scanner.CleanupOrphans(ctx); err != nil {
 			w.log.WithError(err).Error("Manual cleanup failed")
 		}
 	}()

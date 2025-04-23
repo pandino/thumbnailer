@@ -46,6 +46,10 @@
                         <span class="stat-value">{{.Stats.Viewed}}</span>
                         <span class="stat-label">Viewed</span>
                     </div>
+                    <div class="stat-box" style="background-color: rgba(231, 76, 60, 0.1); border-left: 4px solid #e74c3c;">
+                        <span class="stat-value">{{.Stats.Deleted}}</span>
+                        <span class="stat-label">Pending Deletion</span>
+                    </div>
                 </div>
             </section>
 
@@ -72,6 +76,15 @@
                             <span class="action-label">Reset Views</span>
                         </button>
                     </form>
+                    
+                    {{if gt .Stats.Deleted 0}}
+                    <form action="/process-deletions" method="post">
+                        <button type="submit" class="action-button" {{if .IsScanning}}disabled{{end}} style="background-color: #e74c3c;">
+                            <span class="action-icon">🗑️</span>
+                            <span class="action-label">Process Deletions ({{.Stats.Deleted}})</span>
+                        </button>
+                    </form>
+                    {{end}}
                 </div>
             </section>
 
@@ -96,6 +109,23 @@
             <section class="thumbnails-panel error-panel">
                 <h2>Error Thumbnails ({{.Stats.Error}})</h2>
                 <div id="error-thumbnails" class="thumbnails-grid">
+                    <div class="loading">Loading...</div>
+                </div>
+            </section>
+            {{end}}
+
+            {{if .Stats.Deleted}}
+            <section class="thumbnails-panel deletions-panel">
+                <h2>Pending Deletion ({{.Stats.Deleted}})</h2>
+                <div class="deletions-info">
+                    <span class="deletions-count">These items will be deleted during the next scheduled cleanup job</span>
+                    <form action="/process-deletions" method="post">
+                        <button type="submit" class="process-deletions-btn" {{if .IsScanning}}disabled{{end}}>
+                            Process Now
+                        </button>
+                    </form>
+                </div>
+                <div id="deleted-thumbnails" class="thumbnails-grid">
                     <div class="loading">Loading...</div>
                 </div>
             </section>

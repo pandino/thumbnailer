@@ -3,9 +3,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Check for flash messages
     checkFlashMessages();
 
-    // Load thumbnails for unviewed and error sections
+    // Load thumbnails for unviewed, error, and deleted sections
     loadThumbnails('unviewed-thumbnails', 'success', '0');
     loadThumbnails('error-thumbnails', 'error');
+    loadThumbnails('deleted-thumbnails', 'deleted');
 
     // Handle keyboard shortcuts
     setupKeyboardShortcuts();
@@ -54,15 +55,22 @@ function renderThumbnails(container, thumbnails) {
 
     // Limit to first 12 thumbnails for performance
     const displayThumbnails = thumbnails.slice(0, 12);
+    
+    // Check if this is the deleted-thumbnails container
+    const isDeletedContainer = container.id === 'deleted-thumbnails';
 
     // Add each thumbnail
     displayThumbnails.forEach(thumbnail => {
         const item = document.createElement('div');
         item.className = 'thumbnail-item';
+        if (isDeletedContainer) {
+            item.classList.add('pending-deletion');
+        }
         
-        // Create thumbnail content
-        item.innerHTML = `
-            <a href="/slideshow?id=${thumbnail.id}">
+        let itemContent = '';
+        if (isDeletedContainer) {
+            // For deleted items, don't link to slideshow
+            itemContent = `
                 <img src="/thumbnails/${thumbnail.thumbnail_path}" alt="${thumbnail.movie_filename}">
                 <div class="thumbnail-info">
                     <div class="thumbnail-title">${thumbnail.movie_filename}</div>
@@ -71,9 +79,24 @@ function renderThumbnails(container, thumbnails) {
                         <span>${formatDate(thumbnail.created_at)}</span>
                     </div>
                 </div>
-            </a>
-        `;
+            `;
+        } else {
+            // For non-deleted items, link to slideshow
+            itemContent = `
+                <a href="/slideshow?id=${thumbnail.id}">
+                    <img src="/thumbnails/${thumbnail.thumbnail_path}" alt="${thumbnail.movie_filename}">
+                    <div class="thumbnail-info">
+                        <div class="thumbnail-title">${thumbnail.movie_filename}</div>
+                        <div class="thumbnail-meta">
+                            <span>${formatDuration(thumbnail.duration)}</span>
+                            <span>${formatDate(thumbnail.created_at)}</span>
+                        </div>
+                    </div>
+                </a>
+            `;
+        }
         
+        item.innerHTML = itemContent;
         container.appendChild(item);
     });
 
