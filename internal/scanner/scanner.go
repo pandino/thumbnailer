@@ -159,6 +159,65 @@ func (s *Scanner) findMovieFiles() ([]string, error) {
 func (s *Scanner) processMovie(ctx context.Context, moviePath string) error {
 	s.log.WithField("movie", moviePath).Info("Processing movie")
 
+	// Generate expected thumbnail filename
+	movieFilename := filepath.Base(moviePath)
+	thumbnailFilename := strings.TrimSuffix(movieFilename, filepath.Ext(movieFilename)) + ".jpg"
+	thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, thumbnailFilename)
+
+	// Check if thumbnail file already exists on disk
+	if _, err := os.Stat(thumbnailPath); err == nil {
+		// Thumbnail file exists, check if it's in the database
+		thumbnail, err := s.db.GetByMoviePath(movieFilename)
+		if err != nil {
+			s.log.WithError(err).WithField("movie", moviePath).Error("Failed to check database")
+			return err
+		}
+
+		// If thumbnail is not in the database, add it
+		if thumbnail == nil {
+			s.log.WithField("movie", moviePath).Info("Thumbnail file exists but not in database, adding entry")
+
+			// Get video metadata for the database entry
+			metadata, err := s.thumbnailer.GetVideoMetadata(ctx, moviePath)
+			if err != nil {
+				s.log.WithError(err).WithField("movie", moviePath).Error("Failed to get video metadata")
+				thumbnail = &models.Thumbnail{
+					MoviePath:     movieFilename,
+					MovieFilename: movieFilename,
+					ThumbnailPath: thumbnailFilename,
+					Status:        models.StatusSuccess,
+				}
+			} else {
+				thumbnail = &models.Thumbnail{
+					MoviePath:     movieFilename,
+					MovieFilename: movieFilename,
+					ThumbnailPath: thumbnailFilename,
+					Status:        models.StatusSuccess,
+					Width:         metadata.Width,
+					Height:        metadata.Height,
+					Duration:      metadata.Duration,
+				}
+			}
+
+			// Add to database
+			if err := s.db.Add(thumbnail); err != nil {
+				s.log.WithError(err).WithField("movie", moviePath).Error("Failed to add to database")
+				return err
+			}
+
+			return nil
+		}
+
+		// If thumbnail is already in database with error status, recreate it
+		if thumbnail.Status == models.StatusError {
+			s.log.WithField("movie", moviePath).Info("Thumbnail in error state, attempting recreation")
+			// Continue with thumbnail creation below
+		} else {
+			// Thumbnail exists and is in database, nothing to do
+			return nil
+		}
+	}
+
 	// Create thumbnail
 	thumbnail, err := s.thumbnailer.CreateThumbnail(ctx, moviePath)
 	if err != nil {

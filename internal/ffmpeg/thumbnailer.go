@@ -46,7 +46,7 @@ func (t *Thumbnailer) CreateThumbnail(ctx context.Context, moviePath string) (*m
 	thumbnailPath := filepath.Join(t.cfg.ThumbnailsDir, thumbnailFilename)
 
 	// Get video metadata
-	metadata, err := t.getVideoMetadata(ctx, moviePath)
+	metadata, err := t.GetVideoMetadata(ctx, moviePath)
 	if err != nil {
 		t.log.WithError(err).WithField("movie", moviePath).Error("Failed to get video metadata")
 		thumbnail.Status = "error"
@@ -105,8 +105,8 @@ type FFProbeResponse struct {
 	} `json:"format"`
 }
 
-// getVideoMetadata extracts metadata from a video file using JSON output format
-func (t *Thumbnailer) getVideoMetadata(ctx context.Context, moviePath string) (*VideoMetadata, error) {
+// GetVideoMetadata extracts metadata from a video file using JSON output format
+func (t *Thumbnailer) GetVideoMetadata(ctx context.Context, moviePath string) (*VideoMetadata, error) {
 	// Use ffprobe with JSON output format
 	cmd := exec.CommandContext(
 		ctx,
