@@ -198,6 +198,31 @@ func (d *DB) GetByThumbnailPath(thumbnailPath string) (*models.Thumbnail, error)
 	return thumbnail, err
 }
 
+// GetRandomUnviewedThumbnail gets a random unviewed thumbnail
+func (d *DB) GetRandomUnviewedThumbnail() (*models.Thumbnail, error) {
+	thumbnail := &models.Thumbnail{}
+	err := d.db.QueryRow(`
+        SELECT 
+            id, movie_path, movie_filename, thumbnail_path, 
+            created_at, updated_at, status, viewed,
+            width, height, duration, error_message
+        FROM thumbnails 
+        WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
+        ORDER BY RANDOM()
+        LIMIT 1
+    `).Scan(
+		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
+		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	return thumbnail, err
+}
+
 // GetDeletedThumbnails retrieves all thumbnails marked for deletion
 func (d *DB) GetDeletedThumbnails() ([]*models.Thumbnail, error) {
 	rows, err := d.db.Query(`

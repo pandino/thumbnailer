@@ -8,13 +8,16 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Set focus to the page for keyboard shortcuts
     document.body.focus();
+    
+    // Set up history timeline animation
+    animateHistoryTimeline();
 });
 
 // Setup keyboard shortcuts for slideshow navigation
 function setupKeyboardShortcuts() {
     document.addEventListener('keydown', function(e) {
         // Prevent default behavior for navigation keys
-        if ([' ', 'ArrowRight', 'ArrowLeft', 'm', 'M', 'd', 'D', 'Escape'].includes(e.key)) {
+        if ([' ', 'ArrowRight', 'ArrowLeft', 'm', 'M', 'd', 'D', 'Escape', 'r', 'R'].includes(e.key)) {
             e.preventDefault();
             
             // Handle different keys
@@ -26,8 +29,10 @@ function setupKeyboardShortcuts() {
                     break;
                 
                 case 'ArrowLeft':
-                    // Previous thumbnail
-                    navigateToPrevious();
+                    // Previous thumbnail - only if not disabled
+                    if (!isPreviousDisabled()) {
+                        navigateToPrevious();
+                    }
                     break;
                 
                 case 'm':
@@ -42,6 +47,12 @@ function setupKeyboardShortcuts() {
                     deleteMovie();
                     break;
                 
+                case 'r':
+                case 'R':
+                    // Reset history
+                    resetHistory();
+                    break;
+                
                 case 'Escape':
                     // Back to control page
                     window.location.href = '/';
@@ -49,6 +60,12 @@ function setupKeyboardShortcuts() {
             }
         }
     });
+}
+
+// Check if previous button is disabled
+function isPreviousDisabled() {
+    const prevButton = document.querySelector('.nav-button.prev');
+    return prevButton && prevButton.classList.contains('disabled');
 }
 
 // Navigate to next thumbnail
@@ -62,8 +79,16 @@ function navigateToNext() {
 // Navigate to previous thumbnail
 function navigateToPrevious() {
     const prevButton = document.querySelector('.nav-button.prev');
-    if (prevButton) {
+    if (prevButton && !prevButton.classList.contains('disabled')) {
         prevButton.click();
+    }
+}
+
+// Reset history
+function resetHistory() {
+    const resetButton = document.querySelector('.nav-button.reset-history');
+    if (resetButton) {
+        resetButton.click();
     }
 }
 
@@ -82,10 +107,15 @@ function markAsViewed() {
 function deleteMovie() {
     const form = document.getElementById('delete-form');
     if (form) {
-        submitFormAjax(form, function() {
-            // Navigate to next after marking for deletion
-            navigateToNext();
-        });
+        const buttonElement = form.querySelector('button');
+        
+        // Only process if the button is not disabled
+        if (buttonElement && !buttonElement.disabled) {
+            submitFormAjax(form, function() {
+                // Navigate to next after marking for deletion
+                navigateToNext();
+            });
+        }
     }
 }
 
@@ -106,6 +136,14 @@ function setupAjaxForms() {
                         const current = parseInt(match[1]);
                         const total = parseInt(match[2]);
                         counterEl.textContent = `Thumbnail ${current + 1} of ${total}`;
+                        
+                        // Make sure we keep the random indicator
+                        if (!counterEl.querySelector('.random-indicator')) {
+                            const randomIndicator = document.createElement('span');
+                            randomIndicator.className = 'random-indicator';
+                            randomIndicator.textContent = 'Random Order';
+                            counterEl.appendChild(randomIndicator);
+                        }
                     }
                 }
                 
@@ -126,6 +164,28 @@ function setupAjaxForms() {
             });
         });
     }
+    
+    // Disable clicks on disabled Previous button
+    const prevButton = document.querySelector('.nav-button.prev.disabled');
+    if (prevButton) {
+        prevButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            return false;
+        });
+    }
+}
+
+// Animate history timeline dots
+function animateHistoryTimeline() {
+    const dots = document.querySelectorAll('.history-dot');
+    dots.forEach((dot, index) => {
+        setTimeout(() => {
+            dot.style.opacity = '0';
+            setTimeout(() => {
+                dot.style.opacity = '1';
+            }, 200);
+        }, index * 100);
+    });
 }
 
 // Submit form via AJAX

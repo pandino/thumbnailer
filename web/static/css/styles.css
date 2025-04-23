@@ -702,6 +702,109 @@ footer {
     background-color: #c0392b;
 }
 
+/* Back counter styles */
+.nav-button.prev {
+    position: relative;
+}
+
+.back-counter {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background-color: #e74c3c;
+    color: white;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.nav-button.prev.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: #95a5a6;
+}
+
+.nav-button.reset-history {
+    background-color: #95a5a6;
+    opacity: 0.8;
+    font-size: 0.9em;
+}
+
+.nav-button.reset-history:hover {
+    background-color: #7f8c8d;
+    opacity: 1;
+}
+
+/* Random indicator */
+.random-indicator {
+    display: inline-block;
+    margin-left: 5px;
+    font-size: 0.8em;
+    color: rgba(255, 255, 255, 0.7);
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+/* Animation for new thumbnails */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.thumbnail-image {
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+/* Improved keyboard shortcut display */
+.shortcut-group {
+    display: inline-block;
+    margin-right: 10px;
+}
+
+.shortcut-value {
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 500;
+}
+
+.shortcut-disabled {
+    color: rgba(255, 255, 255, 0.3);
+    text-decoration: line-through;
+}
+
+/* History timeline */
+.history-timeline {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    margin-top: 10px;
+    margin-bottom: 5px;
+}
+
+.history-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+.history-dot.available {
+    background-color: var(--primary-color);
+}
+
+.history-dot.current {
+    background-color: white;
+    border: 2px solid var(--primary-color);
+    transform: scale(1.2);
+}
+
 /* Responsive Adjustments */
 @media (max-width: 768px) {
     .stats-grid, .actions-grid, .thumbnails-grid {

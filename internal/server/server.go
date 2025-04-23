@@ -61,6 +61,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 // routes initializes the HTTP routes
+// routes initializes the HTTP routes
 func (s *Server) routes() {
 	// Middleware
 	s.router.Use(s.loggingMiddleware)
@@ -88,6 +89,7 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/slideshow/previous", s.handleSlideshowPrevious).Methods("GET")
 	s.router.HandleFunc("/slideshow/mark-viewed", s.handleMarkViewed).Methods("POST")
 	s.router.HandleFunc("/slideshow/delete", s.handleDelete).Methods("POST")
+	s.router.HandleFunc("/slideshow/reset-history", s.handleResetHistory).Methods("GET") // New route for resetting history
 
 	// API routes
 	s.router.HandleFunc("/api/stats", s.handleStats).Methods("GET")
