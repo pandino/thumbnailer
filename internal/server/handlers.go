@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"net/http"
 	"path/filepath"
@@ -102,16 +103,40 @@ func (s *Server) handleResetViews(w http.ResponseWriter, r *http.Request) {
 
 // handleSlideshow renders the slideshow page
 func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
-	// Get unviewed thumbnails
-	thumbnails, err := s.db.GetUnviewedThumbnails()
+	// Check if an ID is specified in the query string
+	idParam := r.URL.Query().Get("id")
+	var currentID int64 = 0
+	if idParam != "" {
+		var err error
+		currentID, err = strconv.ParseInt(idParam, 10, 64)
+		if err != nil {
+			s.log.WithError(err).Error("Invalid ID parameter")
+			http.Error(w, "Invalid ID parameter", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Get the next unviewed thumbnail
+	var thumbnail *models.Thumbnail
+	var err error
+	var total int
+
+	if currentID > 0 {
+		// Get the specified thumbnail
+		thumbnail, err = s.db.GetByID(currentID)
+	} else {
+		// Get the first unviewed thumbnail
+		thumbnail, err = s.db.GetFirstUnviewedThumbnail()
+	}
+
 	if err != nil {
-		s.log.WithError(err).Error("Failed to get unviewed thumbnails")
+		s.log.WithError(err).Error("Failed to get thumbnail")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	// If no unviewed thumbnails, redirect to control page with message
-	if len(thumbnails) == 0 {
+	// If no thumbnail found, redirect to control page
+	if thumbnail == nil {
 		http.SetCookie(w, &http.Cookie{
 			Name:  "flash",
 			Value: "No unviewed thumbnails found",
@@ -121,8 +146,19 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the first thumbnail
-	thumbnail := thumbnails[0]
+	// Get the total count of unviewed thumbnails
+	total, err = s.db.GetUnviewedThumbnailCount()
+	if err != nil {
+		s.log.WithError(err).Error("Failed to get unviewed count")
+		total = 0
+	}
+
+	// Get current position
+	position, err := s.db.GetThumbnailPosition(thumbnail.ID)
+	if err != nil {
+		s.log.WithError(err).Error("Failed to get thumbnail position")
+		position = 1
+	}
 
 	// Parse template
 	tmpl, err := template.ParseFiles(filepath.Join(s.cfg.TemplatesDir, "slideshow.html"))
@@ -139,8 +175,8 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		Current   int
 	}{
 		Thumbnail: thumbnail,
-		Total:     len(thumbnails),
-		Current:   1,
+		Total:     total,
+		Current:   position,
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
@@ -148,27 +184,46 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-
-	// Mark as viewed (after rendering, so we don't affect the current view)
-	go func() {
-		if err := s.db.MarkAsViewed(thumbnail.ThumbnailPath); err != nil {
-			s.log.WithError(err).WithField("thumbnail", thumbnail.ThumbnailPath).Error("Failed to mark as viewed")
-		}
-	}()
 }
 
 // handleSlideshowNext shows the next thumbnail in the slideshow
 func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
-	// Get all unviewed thumbnails
-	thumbnails, err := s.db.GetUnviewedThumbnails()
+	// Get current thumbnail ID from query string
+	currentIDStr := r.URL.Query().Get("current")
+	var currentID int64 = 0
+
+	if currentIDStr != "" {
+		var err error
+		currentID, err = strconv.ParseInt(currentIDStr, 10, 64)
+		if err != nil {
+			s.log.WithError(err).Error("Invalid current ID")
+			http.Error(w, "Invalid ID parameter", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Mark current thumbnail as viewed (if we have a current ID)
+	if currentID > 0 {
+		thumbnail, err := s.db.GetByID(currentID)
+		if err == nil && thumbnail != nil {
+			err = s.db.MarkAsViewed(thumbnail.ThumbnailPath)
+			if err != nil {
+				s.log.WithError(err).Error("Failed to mark as viewed")
+				// Continue anyway
+			}
+		}
+	}
+
+	// Get next unviewed thumbnail
+	nextThumbnail, err := s.db.GetNextUnviewedThumbnail(currentID)
 	if err != nil {
-		s.log.WithError(err).Error("Failed to get unviewed thumbnails")
+		s.log.WithError(err).Error("Failed to get next thumbnail")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	// If no unviewed thumbnails, redirect to control page with message
-	if len(thumbnails) == 0 {
+	// If no next thumbnail, redirect to control page
+	if nextThumbnail == nil {
 		http.SetCookie(w, &http.Cookie{
 			Name:  "flash",
 			Value: "No more thumbnails to view",
@@ -178,73 +233,46 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Redirect to slideshow page, which will show the first unviewed thumbnail
-	http.Redirect(w, r, "/slideshow", http.StatusSeeOther)
+	// Redirect to slideshow with next thumbnail ID
+	http.Redirect(w, r, fmt.Sprintf("/slideshow?id=%d", nextThumbnail.ID), http.StatusSeeOther)
 }
 
-// handleSlideshowPrevious shows the previous thumbnail in the slideshow (viewed ones)
+// handleSlideshowPrevious shows the previous thumbnail
 func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request) {
 	// Get current thumbnail ID from query string
-	currentID := r.URL.Query().Get("current")
-	if currentID == "" {
-		http.Redirect(w, r, "/slideshow", http.StatusSeeOther)
-		return
-	}
+	currentIDStr := r.URL.Query().Get("current")
+	var currentID int64 = 0
 
-	// Parse the ID
-	id, err := strconv.ParseInt(currentID, 10, 64)
-	if err != nil {
-		http.Redirect(w, r, "/slideshow", http.StatusSeeOther)
-		return
-	}
-
-	// Get viewed thumbnails
-	thumbnails, err := s.db.GetViewedThumbnails()
-	if err != nil {
-		s.log.WithError(err).Error("Failed to get viewed thumbnails")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	// Find the previous thumbnail
-	var prevThumbnail *models.Thumbnail
-	for i, t := range thumbnails {
-		if t.ID == id && i > 0 {
-			prevThumbnail = thumbnails[i-1]
-			break
+	if currentIDStr != "" {
+		var err error
+		currentID, err = strconv.ParseInt(currentIDStr, 10, 64)
+		if err != nil {
+			s.log.WithError(err).Error("Invalid current ID")
+			http.Error(w, "Invalid ID parameter", http.StatusBadRequest)
+			return
 		}
 	}
 
-	// If no previous thumbnail, redirect to slideshow
-	if prevThumbnail == nil {
-		http.Redirect(w, r, "/slideshow", http.StatusSeeOther)
-		return
-	}
-
-	// Parse template
-	tmpl, err := template.ParseFiles(filepath.Join(s.cfg.TemplatesDir, "slideshow.html"))
+	// Get previous thumbnail (can be viewed or unviewed)
+	prevThumbnail, err := s.db.GetPreviousThumbnail(currentID)
 	if err != nil {
-		s.log.WithError(err).Error("Failed to parse template")
+		s.log.WithError(err).Error("Failed to get previous thumbnail")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	// Render template with data
-	data := struct {
-		Thumbnail *models.Thumbnail
-		Total     int
-		Current   int
-	}{
-		Thumbnail: prevThumbnail,
-		Total:     len(thumbnails),
-		Current:   1, // This is simplified; you may want to calculate actual position
-	}
-
-	if err := tmpl.Execute(w, data); err != nil {
-		s.log.WithError(err).Error("Failed to render template")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	// If no previous thumbnail, stay on current
+	if prevThumbnail == nil {
+		if currentID > 0 {
+			http.Redirect(w, r, fmt.Sprintf("/slideshow?id=%d", currentID), http.StatusSeeOther)
+		} else {
+			http.Redirect(w, r, "/slideshow", http.StatusSeeOther)
+		}
 		return
 	}
+
+	// Redirect to slideshow with previous thumbnail ID
+	http.Redirect(w, r, fmt.Sprintf("/slideshow?id=%d", prevThumbnail.ID), http.StatusSeeOther)
 }
 
 // handleMarkViewed marks a thumbnail as viewed

@@ -187,6 +187,110 @@ func (d *DB) GetByThumbnailPath(thumbnailPath string) (*models.Thumbnail, error)
 	return thumbnail, err
 }
 
+// GetFirstUnviewedThumbnail gets the first unviewed thumbnail
+func (d *DB) GetFirstUnviewedThumbnail() (*models.Thumbnail, error) {
+	thumbnail := &models.Thumbnail{}
+	err := d.db.QueryRow(`
+        SELECT 
+            id, movie_path, movie_filename, thumbnail_path, 
+            created_at, updated_at, status, viewed,
+            width, height, duration, error_message
+        FROM thumbnails 
+        WHERE status = 'success' AND viewed = 0
+        ORDER BY id ASC
+        LIMIT 1
+    `).Scan(
+		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
+		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	return thumbnail, err
+}
+
+// GetNextUnviewedThumbnail gets the next unviewed thumbnail after the given ID
+func (d *DB) GetNextUnviewedThumbnail(currentID int64) (*models.Thumbnail, error) {
+	thumbnail := &models.Thumbnail{}
+	err := d.db.QueryRow(`
+        SELECT 
+            id, movie_path, movie_filename, thumbnail_path, 
+            created_at, updated_at, status, viewed,
+            width, height, duration, error_message
+        FROM thumbnails 
+        WHERE status = 'success' AND viewed = 0 AND id > ?
+        ORDER BY id ASC
+        LIMIT 1
+    `, currentID).Scan(
+		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
+		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	return thumbnail, err
+}
+
+// GetPreviousThumbnail gets the previous thumbnail before the given ID
+func (d *DB) GetPreviousThumbnail(currentID int64) (*models.Thumbnail, error) {
+	// If current ID is 0, return nil (no previous)
+	if currentID == 0 {
+		return nil, nil
+	}
+
+	thumbnail := &models.Thumbnail{}
+	err := d.db.QueryRow(`
+        SELECT 
+            id, movie_path, movie_filename, thumbnail_path, 
+            created_at, updated_at, status, viewed,
+            width, height, duration, error_message
+        FROM thumbnails 
+        WHERE status = 'success' AND id < ?
+        ORDER BY id DESC
+        LIMIT 1
+    `, currentID).Scan(
+		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
+		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	return thumbnail, err
+}
+
+// GetUnviewedThumbnailCount returns the total count of unviewed thumbnails
+func (d *DB) GetUnviewedThumbnailCount() (int, error) {
+	var count int
+	err := d.db.QueryRow(`
+        SELECT COUNT(*)
+        FROM thumbnails 
+        WHERE status = 'success' AND viewed = 0
+    `).Scan(&count)
+
+	return count, err
+}
+
+// GetThumbnailPosition gets the position of a thumbnail in the unviewed sequence
+func (d *DB) GetThumbnailPosition(id int64) (int, error) {
+	var position int
+	err := d.db.QueryRow(`
+        SELECT COUNT(*) + 1
+        FROM thumbnails
+        WHERE status = 'success' AND viewed = 0 AND id < ?
+    `, id).Scan(&position)
+
+	return position, err
+}
+
 // GetUnviewedThumbnails retrieves all unviewed thumbnails
 func (d *DB) GetUnviewedThumbnails() ([]*models.Thumbnail, error) {
 	rows, err := d.db.Query(`
