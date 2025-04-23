@@ -98,7 +98,14 @@
             {{if .Stats.Unviewed}}
             <section class="thumbnails-panel">
                 <h2>Recent Unviewed Thumbnails (Showing {{if lt .Stats.Unviewed 10}}{{.Stats.Unviewed}}{{else}}10{{end}} of {{.Stats.Unviewed}})</h2>
-                <a href="/slideshow" class="start-slideshow">Start Slideshow</a>
+                
+                <div class="slideshow-actions">
+                    <a href="/slideshow?new=true" class="start-slideshow">Start New Slideshow</a>
+                    {{if .HasSession}}
+                    <a href="/slideshow" class="continue-slideshow">Continue Slideshow ({{.SessionViewedCount}}/{{.SessionTotalCount}})</a>
+                    {{end}}
+                </div>
+                
                 <div id="unviewed-thumbnails" class="thumbnails-grid">
                     <div class="loading">Loading...</div>
                 </div>

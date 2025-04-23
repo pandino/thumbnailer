@@ -2,12 +2,14 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/pandino/movie-thumbnailer-go/internal/models" // Add missing import
@@ -22,6 +24,34 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for existing session from cookie
+	var hasSession bool
+	var sessionViewedCount int
+	var sessionTotalCount int
+
+	// Get session from cookie
+	type SessionData struct {
+		TotalImages int   `json:"total_images"`
+		ViewedCount int   `json:"viewed_count"`
+		CurrentID   int64 `json:"current_id"`
+		StartedAt   int64 `json:"started_at"`
+	}
+
+	sessionCookie, err := r.Cookie("slideshow_session")
+	if err == nil && sessionCookie.Value != "" {
+		// Decode the cookie value
+		jsonData, err := base64.StdEncoding.DecodeString(sessionCookie.Value)
+		if err == nil {
+			var session SessionData
+			err = json.Unmarshal(jsonData, &session)
+			if err == nil && session.TotalImages > 0 {
+				hasSession = true
+				sessionViewedCount = session.ViewedCount
+				sessionTotalCount = session.TotalImages
+			}
+		}
+	}
+
 	// Parse template
 	tmpl, err := template.ParseFiles(filepath.Join(s.cfg.TemplatesDir, "control.html"))
 	if err != nil {
@@ -32,11 +62,17 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 
 	// Render template with data
 	data := struct {
-		Stats      *models.Stats
-		IsScanning bool
+		Stats              *models.Stats
+		IsScanning         bool
+		HasSession         bool
+		SessionViewedCount int
+		SessionTotalCount  int
 	}{
-		Stats:      stats,
-		IsScanning: s.scanner.IsScanning(),
+		Stats:              stats,
+		IsScanning:         s.scanner.IsScanning(),
+		HasSession:         hasSession,
+		SessionViewedCount: sessionViewedCount,
+		SessionTotalCount:  sessionTotalCount,
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
@@ -140,9 +176,105 @@ func (s *Server) handleProcessDeletions(w http.ResponseWriter, r *http.Request) 
 
 // handleSlideshow renders the slideshow page
 func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
-	// Check if an ID is specified in the query string
+	// Check if a new session was requested
+	newSession := r.URL.Query().Get("new") == "true"
+
+	// Initialize session data
+	type SessionData struct {
+		TotalImages int   `json:"total_images"`
+		ViewedCount int   `json:"viewed_count"`
+		CurrentID   int64 `json:"current_id"`
+		StartedAt   int64 `json:"started_at"`
+	}
+
+	var session SessionData
+
+	// Handle cookie-based session
+	if newSession {
+		// Create a new session - get the total count of unviewed thumbnails
+		stats, err := s.scanner.GetStats()
+		if err != nil {
+			s.log.WithError(err).Error("Failed to get stats")
+			// Continue with zero count as fallback
+			stats = &models.Stats{}
+		}
+
+		// Initialize new session with the count of unviewed thumbnails
+		session = SessionData{
+			TotalImages: stats.Unviewed,
+			ViewedCount: 0,
+			CurrentID:   0,
+			StartedAt:   time.Now().Unix(),
+		}
+
+		// Save to cookie
+		sessionJSON, err := json.Marshal(session)
+		if err != nil {
+			s.log.WithError(err).Error("Failed to marshal session data")
+			// Continue without session data
+		} else {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "slideshow_session",
+				Value:    base64.StdEncoding.EncodeToString(sessionJSON),
+				Path:     "/",
+				MaxAge:   86400 * 30, // 30 days
+				HttpOnly: true,
+			})
+		}
+	} else {
+		// Try to get existing session from cookie
+		sessionCookie, err := r.Cookie("slideshow_session")
+		if err == nil && sessionCookie.Value != "" {
+			// Decode the cookie value
+			jsonData, err := base64.StdEncoding.DecodeString(sessionCookie.Value)
+			if err == nil {
+				err = json.Unmarshal(jsonData, &session)
+				if err != nil {
+					s.log.WithError(err).Error("Failed to unmarshal session data")
+					// Initialize new session as fallback
+					stats, err := s.scanner.GetStats()
+					if err != nil {
+						stats = &models.Stats{}
+					}
+					session = SessionData{
+						TotalImages: stats.Unviewed,
+						ViewedCount: 0,
+						CurrentID:   0,
+						StartedAt:   time.Now().Unix(),
+					}
+				}
+			}
+		} else {
+			// No session cookie found or empty value, initialize a default session
+			stats, err := s.scanner.GetStats()
+			if err != nil {
+				stats = &models.Stats{}
+			}
+
+			session = SessionData{
+				TotalImages: stats.Unviewed,
+				ViewedCount: 0,
+				CurrentID:   0,
+				StartedAt:   time.Now().Unix(),
+			}
+
+			// Save to cookie
+			sessionJSON, err := json.Marshal(session)
+			if err == nil {
+				http.SetCookie(w, &http.Cookie{
+					Name:     "slideshow_session",
+					Value:    base64.StdEncoding.EncodeToString(sessionJSON),
+					Path:     "/",
+					MaxAge:   86400 * 30, // 30 days
+					HttpOnly: true,
+				})
+			}
+		}
+	}
+
+	// Check if an ID is specified in the query string for a specific thumbnail
 	idParam := r.URL.Query().Get("id")
-	var currentID int64 = 0
+	var currentID int64 = session.CurrentID
 	if idParam != "" {
 		var err error
 		currentID, err = strconv.ParseInt(idParam, 10, 64)
@@ -153,10 +285,9 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get the next unviewed thumbnail
+	// Get the thumbnail to display
 	var thumbnail *models.Thumbnail
 	var err error
-	var total int
 
 	if currentID > 0 {
 		// Get the specified thumbnail
@@ -183,19 +314,29 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the total count of unviewed thumbnails
-	total, err = s.db.GetUnviewedThumbnailCount()
-	if err != nil {
-		s.log.WithError(err).Error("Failed to get unviewed count")
-		total = 0
+	// Update session with current thumbnail if it's changed
+	if thumbnail.ID != session.CurrentID {
+		// If it's a new thumbnail, increment the viewed count
+		if session.CurrentID > 0 && thumbnail.ID != session.CurrentID {
+			session.ViewedCount++
+		}
+		session.CurrentID = thumbnail.ID
+
+		// Save the updated session
+		sessionJSON, err := json.Marshal(session)
+		if err == nil {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "slideshow_session",
+				Value:    base64.StdEncoding.EncodeToString(sessionJSON),
+				Path:     "/",
+				MaxAge:   86400 * 30, // 30 days
+				HttpOnly: true,
+			})
+		}
 	}
 
-	// Get current position
-	position, err := s.db.GetThumbnailPosition(thumbnail.ID)
-	if err != nil {
-		s.log.WithError(err).Error("Failed to get thumbnail position")
-		position = 1
-	}
+	// Calculate current position in this session
+	position := session.ViewedCount + 1
 
 	// Parse template
 	tmpl, err := template.ParseFiles(filepath.Join(s.cfg.TemplatesDir, "slideshow.html"))
@@ -212,7 +353,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		Current   int
 	}{
 		Thumbnail: thumbnail,
-		Total:     total,
+		Total:     session.TotalImages,
 		Current:   position,
 	}
 
@@ -239,7 +380,34 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Mark current thumbnail as viewed (if we have a current ID)
+	// Get session from cookie
+	type SessionData struct {
+		TotalImages int   `json:"total_images"`
+		ViewedCount int   `json:"viewed_count"`
+		CurrentID   int64 `json:"current_id"`
+		StartedAt   int64 `json:"started_at"`
+	}
+
+	var session SessionData
+	sessionCookie, err := r.Cookie("slideshow_session")
+	if err == nil && sessionCookie.Value != "" {
+		// Decode the cookie value
+		jsonData, err := base64.StdEncoding.DecodeString(sessionCookie.Value)
+		if err == nil {
+			err = json.Unmarshal(jsonData, &session)
+			if err != nil {
+				// Reset session on unmarshal error
+				session = SessionData{
+					TotalImages: 0,
+					ViewedCount: 0,
+					CurrentID:   0,
+					StartedAt:   time.Now().Unix(),
+				}
+			}
+		}
+	}
+
+	// Mark current thumbnail as viewed
 	if currentID > 0 {
 		thumbnail, err := s.db.GetByID(currentID)
 		if err == nil && thumbnail != nil && thumbnail.Status != models.StatusDeleted {
@@ -247,6 +415,11 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				s.log.WithError(err).Error("Failed to mark as viewed")
 				// Continue anyway
+			}
+
+			// Update session viewed count if this is the current session thumbnail
+			if currentID == session.CurrentID {
+				session.ViewedCount++
 			}
 		}
 	}
@@ -270,6 +443,21 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Update session with next thumbnail
+	session.CurrentID = nextThumbnail.ID
+
+	// Save the updated session
+	sessionJSON, err := json.Marshal(session)
+	if err == nil {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "slideshow_session",
+			Value:    base64.StdEncoding.EncodeToString(sessionJSON),
+			Path:     "/",
+			MaxAge:   86400 * 30, // 30 days
+			HttpOnly: true,
+		})
+	}
+
 	// Redirect to slideshow with next thumbnail ID
 	http.Redirect(w, r, fmt.Sprintf("/slideshow?id=%d", nextThumbnail.ID), http.StatusSeeOther)
 }
@@ -287,6 +475,33 @@ func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request)
 			s.log.WithError(err).Error("Invalid current ID")
 			http.Error(w, "Invalid ID parameter", http.StatusBadRequest)
 			return
+		}
+	}
+
+	// Get session data from cookie
+	type SessionData struct {
+		TotalImages int   `json:"total_images"`
+		ViewedCount int   `json:"viewed_count"`
+		CurrentID   int64 `json:"current_id"`
+		StartedAt   int64 `json:"started_at"`
+	}
+
+	var session SessionData
+	sessionCookie, err := r.Cookie("slideshow_session")
+	if err == nil && sessionCookie.Value != "" {
+		// Decode the cookie value
+		jsonData, err := base64.StdEncoding.DecodeString(sessionCookie.Value)
+		if err == nil {
+			err = json.Unmarshal(jsonData, &session)
+			if err != nil {
+				// Reset session on unmarshal error
+				session = SessionData{
+					TotalImages: 0,
+					ViewedCount: 0,
+					CurrentID:   0,
+					StartedAt:   time.Now().Unix(),
+				}
+			}
 		}
 	}
 
@@ -308,6 +523,22 @@ func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Update session with previous thumbnail ID
+	// Note: We don't change the viewed count when navigating backwards
+	session.CurrentID = prevThumbnail.ID
+
+	// Save the updated session
+	sessionJSON, err := json.Marshal(session)
+	if err == nil {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "slideshow_session",
+			Value:    base64.StdEncoding.EncodeToString(sessionJSON),
+			Path:     "/",
+			MaxAge:   86400 * 30, // 30 days
+			HttpOnly: true,
+		})
+	}
+
 	// Redirect to slideshow with previous thumbnail ID
 	http.Redirect(w, r, fmt.Sprintf("/slideshow?id=%d", prevThumbnail.ID), http.StatusSeeOther)
 }
@@ -321,11 +552,68 @@ func (s *Server) handleMarkViewed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get thumbnail ID from form
+	thumbnailIDStr := r.FormValue("id")
+	var thumbnailID int64 = 0
+	if thumbnailIDStr != "" {
+		var err error
+		thumbnailID, err = strconv.ParseInt(thumbnailIDStr, 10, 64)
+		if err != nil {
+			s.log.WithError(err).Error("Invalid thumbnail ID")
+			// Continue anyway
+		}
+	}
+
+	// Get session data from cookie
+	type SessionData struct {
+		TotalImages int   `json:"total_images"`
+		ViewedCount int   `json:"viewed_count"`
+		CurrentID   int64 `json:"current_id"`
+		StartedAt   int64 `json:"started_at"`
+	}
+
+	var session SessionData
+	sessionCookie, err := r.Cookie("slideshow_session")
+	if err == nil && sessionCookie.Value != "" {
+		// Decode the cookie value
+		jsonData, err := base64.StdEncoding.DecodeString(sessionCookie.Value)
+		if err == nil {
+			err = json.Unmarshal(jsonData, &session)
+			if err != nil {
+				// Initialize a default session on unmarshal error
+				session = SessionData{
+					TotalImages: 0,
+					ViewedCount: 0,
+					CurrentID:   0,
+					StartedAt:   time.Now().Unix(),
+				}
+			}
+		}
+	}
+
 	// Mark as viewed
 	if err := s.db.MarkAsViewed(thumbnailPath); err != nil {
 		s.log.WithError(err).WithField("thumbnail", thumbnailPath).Error("Failed to mark as viewed")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+
+	// Update session if the ID matches current session ID
+	if thumbnailID > 0 && thumbnailID == session.CurrentID {
+		session.ViewedCount++
+		session.CurrentID = thumbnailID
+
+		// Save the updated session
+		sessionJSON, err := json.Marshal(session)
+		if err == nil {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "slideshow_session",
+				Value:    base64.StdEncoding.EncodeToString(sessionJSON),
+				Path:     "/",
+				MaxAge:   86400 * 30, // 30 days
+				HttpOnly: true,
+			})
+		}
 	}
 
 	// If ajax request, return JSON response
@@ -336,7 +624,7 @@ func (s *Server) handleMarkViewed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Otherwise redirect to next
-	http.Redirect(w, r, "/slideshow/next", http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/slideshow/next?current=%s", thumbnailIDStr), http.StatusSeeOther)
 }
 
 // handleDelete marks a movie and its thumbnail for deletion

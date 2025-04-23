@@ -89,7 +89,7 @@ function deleteMovie() {
     }
 }
 
-// Update the setupAjaxForms function to remove confirmation
+// Setup form AJAX submissions
 function setupAjaxForms() {
     // Mark as viewed form
     const viewForm = document.getElementById('mark-viewed-form');
@@ -97,6 +97,18 @@ function setupAjaxForms() {
         viewForm.addEventListener('submit', function(e) {
             e.preventDefault();
             submitFormAjax(this, function() {
+                // Update session display counter before navigating to next
+                const counterEl = document.querySelector('.slideshow-counter');
+                if (counterEl) {
+                    const counterText = counterEl.textContent;
+                    const match = counterText.match(/Thumbnail (\d+) of (\d+)/);
+                    if (match && match.length >= 3) {
+                        const current = parseInt(match[1]);
+                        const total = parseInt(match[2]);
+                        counterEl.textContent = `Thumbnail ${current + 1} of ${total}`;
+                    }
+                }
+                
                 // Navigate to next after marking as viewed
                 navigateToNext();
             });
