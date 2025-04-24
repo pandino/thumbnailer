@@ -76,14 +76,17 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 		return fmt.Errorf("failed to find movie files: %w", err)
 	}
 
-	s.log.Infof("Found %d movie files", len(movieFiles))
+	totalfiles := len(movieFiles)
+
+	s.log.Infof("Found %d movie files", totalfiles)
 
 	// Process movies in parallel
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(s.cfg.MaxWorkers)
 
-	for _, moviePath := range movieFiles {
+	for current, moviePath := range movieFiles {
 		moviePath := moviePath // Capture variable for goroutine
+		current := current     // Capture variable for logging
 
 		// Check if context is cancelled
 		select {
@@ -108,7 +111,7 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 
 		// Process the movie in parallel
 		g.Go(func() error {
-			return s.processMovie(gctx, moviePath)
+			return s.processMovie(gctx, moviePath, current, totalfiles)
 		})
 	}
 
@@ -196,8 +199,8 @@ func (s *Scanner) findMovieFiles(ctx context.Context) ([]string, error) {
 }
 
 // processMovie generates a thumbnail for a movie file
-func (s *Scanner) processMovie(ctx context.Context, moviePath string) error {
-	s.log.WithField("movie", moviePath).Info("Processing movie")
+func (s *Scanner) processMovie(ctx context.Context, moviePath string, current int, totalFiles int) error {
+	s.log.WithField("movie", moviePath).Infof("[%d/%d] Processing movie", current+1, totalFiles)
 
 	// Check for context cancellation
 	select {
