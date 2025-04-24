@@ -212,66 +212,46 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string) error {
 	thumbnailFilename := strings.TrimSuffix(movieFilename, filepath.Ext(movieFilename)) + ".jpg"
 	thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, thumbnailFilename)
 
+	// Initialize a thumbnail record - will be either inserted or updated
+	thumbnail := &models.Thumbnail{
+		MoviePath:     movieFilename,
+		MovieFilename: movieFilename,
+		ThumbnailPath: thumbnailFilename,
+		Status:        models.StatusPending,
+	}
+
 	// Check if thumbnail file already exists on disk
+	fileExists := false
 	if _, err := os.Stat(thumbnailPath); err == nil {
-		// Thumbnail file exists, check if it's in the database
-		thumbnail, err := s.db.GetByMoviePath(movieFilename)
-		if err != nil {
-			s.log.WithError(err).WithField("movie", moviePath).Error("Failed to check database")
-			return err
-		}
+		fileExists = true
+	}
 
-		// If thumbnail is not in the database, add it
-		if thumbnail == nil {
-			s.log.WithField("movie", moviePath).Info("Thumbnail file exists but not in database, adding entry")
+	// Get existing record if any - this doesn't cause an extra query because
+	// our UpsertThumbnail implementation will do this check internally
+	existingThumbnail, err := s.db.GetByMoviePath(movieFilename)
+	if err != nil {
+		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to check database")
+		return fmt.Errorf("failed to check database for movie %s: %w", moviePath, err)
+	}
 
-			// Check for context cancellation
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				// Continue processing
-			}
+	// If thumbnail exists in DB and is successful, and the file exists, nothing to do
+	if existingThumbnail != nil && existingThumbnail.Status == models.StatusSuccess && fileExists {
+		s.log.WithField("movie", moviePath).Debug("Thumbnail already exists and is successful, skipping")
+		return nil
+	}
 
-			// Get video metadata for the database entry
-			metadata, err := s.thumbnailer.GetVideoMetadata(ctx, moviePath)
-			if err != nil {
-				s.log.WithError(err).WithField("movie", moviePath).Error("Failed to get video metadata")
-				thumbnail = &models.Thumbnail{
-					MoviePath:     movieFilename,
-					MovieFilename: movieFilename,
-					ThumbnailPath: thumbnailFilename,
-					Status:        models.StatusSuccess,
-				}
-			} else {
-				thumbnail = &models.Thumbnail{
-					MoviePath:     movieFilename,
-					MovieFilename: movieFilename,
-					ThumbnailPath: thumbnailFilename,
-					Status:        models.StatusSuccess,
-					Width:         metadata.Width,
-					Height:        metadata.Height,
-					Duration:      metadata.Duration,
-				}
-			}
+	// If we have an existing record, preserve some values
+	if existingThumbnail != nil {
+		thumbnail.ID = existingThumbnail.ID
+		thumbnail.CreatedAt = existingThumbnail.CreatedAt
+		thumbnail.Viewed = existingThumbnail.Viewed
+	}
 
-			// Add to database
-			if err := s.db.Add(thumbnail); err != nil {
-				s.log.WithError(err).WithField("movie", moviePath).Error("Failed to add to database")
-				return err
-			}
-
-			return nil
-		}
-
-		// If thumbnail is already in database with error status, recreate it
-		if thumbnail.Status == models.StatusError {
-			s.log.WithField("movie", moviePath).Info("Thumbnail in error state, attempting recreation")
-			// Continue with thumbnail creation below
-		} else {
-			// Thumbnail exists and is in database, nothing to do
-			return nil
-		}
+	// Save the pending status - this ensures other processes know this movie is being processed
+	// and establishes the record in the database
+	if err := s.db.UpsertThumbnail(thumbnail); err != nil {
+		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to save pending status")
+		return fmt.Errorf("failed to save pending status for movie %s: %w", moviePath, err)
 	}
 
 	// Check for context cancellation before creating thumbnail
@@ -282,18 +262,42 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string) error {
 		// Continue processing
 	}
 
-	// Create thumbnail
-	thumbnail, err := s.thumbnailer.CreateThumbnail(ctx, moviePath)
+	// Generate the thumbnail
+	generatedThumbnail, err := s.thumbnailer.CreateThumbnail(ctx, moviePath, s.db)
 	if err != nil {
 		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to create thumbnail")
-		// We still add to the database with error status
+
+		// Update status to error
+		thumbnail.Status = models.StatusError
+		thumbnail.ErrorMessage = fmt.Sprintf("Failed to create thumbnail: %v", err)
+
+		// Save the error status
+		if upsertErr := s.db.UpsertThumbnail(thumbnail); upsertErr != nil {
+			s.log.WithError(upsertErr).WithField("movie", moviePath).Error("Failed to save error status")
+		}
+
+		return fmt.Errorf("failed to create thumbnail for movie %s: %w", moviePath, err)
 	}
 
-	// Add to database
-	if err := s.db.Add(thumbnail); err != nil {
-		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to add to database")
-		return err
+	// Update our record with the generated thumbnail data
+	thumbnail.Status = generatedThumbnail.Status
+	thumbnail.Width = generatedThumbnail.Width
+	thumbnail.Height = generatedThumbnail.Height
+	thumbnail.Duration = generatedThumbnail.Duration
+	thumbnail.ErrorMessage = generatedThumbnail.ErrorMessage
+
+	// Save the final status
+	if err := s.db.UpsertThumbnail(thumbnail); err != nil {
+		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to save final status")
+		return fmt.Errorf("failed to save final status for movie %s: %w", moviePath, err)
 	}
+
+	s.log.WithFields(logrus.Fields{
+		"movie":      moviePath,
+		"status":     thumbnail.Status,
+		"duration":   thumbnail.Duration,
+		"resolution": fmt.Sprintf("%dx%d", thumbnail.Width, thumbnail.Height),
+	}).Info("Processed movie")
 
 	return nil
 }

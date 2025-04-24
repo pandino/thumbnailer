@@ -99,6 +99,56 @@ func (d *DB) Add(thumbnail *models.Thumbnail) error {
 	return err
 }
 
+// UpsertThumbnail performs a true upsert operation (insert or update) in a single query
+func (d *DB) UpsertThumbnail(thumbnail *models.Thumbnail) error {
+	// SQLite supports "INSERT OR REPLACE" syntax for upsert operations
+	// For this to work correctly, we need to make sure movie_path is set as UNIQUE in the schema
+
+	// Note: This will reset the created_at timestamp if not provided
+	// If preserving created_at is important, we would need to fetch it first for existing records
+
+	_, err := d.db.Exec(`
+        INSERT OR REPLACE INTO thumbnails 
+        (id, movie_path, movie_filename, thumbnail_path, status, viewed, 
+         width, height, duration, error_message, 
+         created_at, updated_at) 
+        VALUES 
+        (
+            (SELECT id FROM thumbnails WHERE movie_path = ?), 
+            ?, ?, ?, ?, ?, 
+            ?, ?, ?, ?, 
+            COALESCE((SELECT created_at FROM thumbnails WHERE movie_path = ?), CURRENT_TIMESTAMP),
+            CURRENT_TIMESTAMP
+        )`,
+		thumbnail.MoviePath, // For the subquery to find existing ID
+		thumbnail.MoviePath,
+		thumbnail.MovieFilename,
+		thumbnail.ThumbnailPath,
+		thumbnail.Status,
+		thumbnail.Viewed,
+		thumbnail.Width,
+		thumbnail.Height,
+		thumbnail.Duration,
+		thumbnail.ErrorMessage,
+		thumbnail.MoviePath, // For the created_at preservation
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to upsert thumbnail: %w", err)
+	}
+
+	// If this was a new record, we should fetch the ID
+	if thumbnail.ID == 0 {
+		var id int64
+		err := d.db.QueryRow("SELECT id FROM thumbnails WHERE movie_path = ?", thumbnail.MoviePath).Scan(&id)
+		if err == nil {
+			thumbnail.ID = id
+		}
+	}
+
+	return nil
+}
+
 // UpdateStatus updates the status of a thumbnail
 func (d *DB) UpdateStatus(moviePath string, status string, errorMsg string) error {
 	_, err := d.db.Exec(`

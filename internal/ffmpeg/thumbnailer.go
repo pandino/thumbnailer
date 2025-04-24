@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/pandino/movie-thumbnailer-go/internal/config"
+	"github.com/pandino/movie-thumbnailer-go/internal/database"
 	"github.com/pandino/movie-thumbnailer-go/internal/models"
 	"github.com/sirupsen/logrus"
 )
@@ -32,18 +33,28 @@ func New(cfg *config.Config, log *logrus.Logger) *Thumbnailer {
 }
 
 // CreateThumbnail generates a thumbnail grid for a movie file
-func (t *Thumbnailer) CreateThumbnail(ctx context.Context, moviePath string) (*models.Thumbnail, error) {
-	// Create a thumbnail record
+func (t *Thumbnailer) CreateThumbnail(ctx context.Context, moviePath string, db *database.DB) (*models.Thumbnail, error) {
+	// Generate thumbnail filename
+	movieFilename := filepath.Base(moviePath)
+	thumbnailFilename := strings.TrimSuffix(movieFilename, filepath.Ext(movieFilename)) + ".jpg"
+	thumbnailPath := filepath.Join(t.cfg.ThumbnailsDir, thumbnailFilename)
+
+	// Initialize thumbnail record
 	thumbnail := &models.Thumbnail{
-		MoviePath:     filepath.Base(moviePath),
-		MovieFilename: filepath.Base(moviePath),
+		MoviePath:     movieFilename,
+		MovieFilename: movieFilename,
+		ThumbnailPath: thumbnailFilename,
 		Status:        "pending",
 	}
 
-	// Generate thumbnail filename
-	thumbnailFilename := strings.TrimSuffix(filepath.Base(moviePath), filepath.Ext(moviePath)) + ".jpg"
-	thumbnail.ThumbnailPath = thumbnailFilename
-	thumbnailPath := filepath.Join(t.cfg.ThumbnailsDir, thumbnailFilename)
+	// Save the pending status to the database right away
+	// This allows other processes to see that this movie is being processed
+	if db != nil {
+		if err := db.UpsertThumbnail(thumbnail); err != nil {
+			t.log.WithError(err).WithField("movie", moviePath).Error("Failed to save pending status")
+			// Continue processing anyway
+		}
+	}
 
 	// Get video metadata
 	metadata, err := t.GetVideoMetadata(ctx, moviePath)
@@ -51,6 +62,14 @@ func (t *Thumbnailer) CreateThumbnail(ctx context.Context, moviePath string) (*m
 		t.log.WithError(err).WithField("movie", moviePath).Error("Failed to get video metadata")
 		thumbnail.Status = "error"
 		thumbnail.ErrorMessage = fmt.Sprintf("Failed to get video metadata: %v", err)
+
+		// Save the error status
+		if db != nil {
+			if err := db.UpsertThumbnail(thumbnail); err != nil {
+				t.log.WithError(err).WithField("movie", moviePath).Error("Failed to save error status")
+			}
+		}
+
 		return thumbnail, err
 	}
 
@@ -72,6 +91,14 @@ func (t *Thumbnailer) CreateThumbnail(ctx context.Context, moviePath string) (*m
 		t.log.WithError(err).WithField("movie", moviePath).Error("Failed to generate thumbnail grid")
 		thumbnail.Status = "error"
 		thumbnail.ErrorMessage = fmt.Sprintf("Failed to generate thumbnail: %v", err)
+
+		// Save the error status
+		if db != nil {
+			if err := db.UpsertThumbnail(thumbnail); err != nil {
+				t.log.WithError(err).WithField("movie", moviePath).Error("Failed to save error status")
+			}
+		}
+
 		return thumbnail, err
 	}
 
@@ -79,11 +106,27 @@ func (t *Thumbnailer) CreateThumbnail(ctx context.Context, moviePath string) (*m
 	if _, err := os.Stat(thumbnailPath); os.IsNotExist(err) {
 		thumbnail.Status = "error"
 		thumbnail.ErrorMessage = "Thumbnail file was not created"
+
+		// Save the error status
+		if db != nil {
+			if err := db.UpsertThumbnail(thumbnail); err != nil {
+				t.log.WithError(err).WithField("movie", moviePath).Error("Failed to save error status")
+			}
+		}
+
 		return thumbnail, fmt.Errorf("thumbnail file was not created: %s", thumbnailPath)
 	}
 
 	// Update status to success
 	thumbnail.Status = "success"
+
+	// Save the final success status
+	if db != nil {
+		if err := db.UpsertThumbnail(thumbnail); err != nil {
+			t.log.WithError(err).WithField("movie", moviePath).Error("Failed to save success status")
+		}
+	}
+
 	return thumbnail, nil
 }
 
