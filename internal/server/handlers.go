@@ -90,7 +90,9 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		if err := s.scanner.ScanMovies(r.Context()); err != nil {
+		// Use background context instead of request context
+		ctx := context.Background()
+		if err := s.scanner.ScanMovies(ctx); err != nil {
 			s.log.WithError(err).Error("Scan failed")
 		}
 	}()
@@ -107,8 +109,9 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		// Fix: Call the cleanupOrphans method - need to fix this in the scanner package
-		if err := s.scanner.ScanMovies(r.Context()); err != nil {
+		// Use background context instead of request context
+		ctx := context.Background()
+		if err := s.scanner.CleanupOrphans(ctx); err != nil {
 			s.log.WithError(err).Error("Cleanup failed")
 		}
 	}()
