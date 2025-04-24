@@ -21,16 +21,18 @@ type Server struct {
 	log     *logrus.Logger
 	server  *http.Server
 	router  *mux.Router
+	appCtx  context.Context
 }
 
 // New creates a new Server
-func New(cfg *config.Config, db *database.DB, scanner *scanner.Scanner, log *logrus.Logger) *Server {
+func New(cfg *config.Config, db *database.DB, scanner *scanner.Scanner, log *logrus.Logger, appCtx context.Context) *Server {
 	s := &Server{
 		cfg:     cfg,
 		db:      db,
 		scanner: scanner,
 		log:     log,
 		router:  mux.NewRouter(),
+		appCtx:  appCtx,
 	}
 
 	// Initialize routes
@@ -60,7 +62,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
 }
 
-// routes initializes the HTTP routes
 // routes initializes the HTTP routes
 func (s *Server) routes() {
 	// Middleware

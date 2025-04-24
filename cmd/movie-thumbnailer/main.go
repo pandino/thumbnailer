@@ -46,6 +46,10 @@ func main() {
 	}
 	defer db.Close()
 
+	// Setup context with cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Initialize scanner
 	s := scanner.New(cfg, db, log)
 
@@ -53,11 +57,7 @@ func main() {
 	w := worker.New(cfg, s, log)
 
 	// Initialize HTTP server
-	srv := server.New(cfg, db, s, log)
-
-	// Setup context with cancellation
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	srv := server.New(cfg, db, s, log, ctx)
 
 	// Start background worker
 	go w.Start(ctx)
@@ -84,7 +84,7 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("Server shutdown failed: %v", err)
+		log.Errorf("Server shutdown failed: %v", err)
 	}
 
 	log.Info("Shutdown complete")

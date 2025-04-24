@@ -33,7 +33,10 @@ func (w *Worker) Start(ctx context.Context) {
 	// Perform an initial scan at startup
 	go func() {
 		w.log.Info("Running initial scan")
-		if err := w.scanner.ScanMovies(ctx); err != nil {
+		// Create a child context that can be cancelled either by the worker context or app shutdown
+		scanCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		if err := w.scanner.ScanMovies(scanCtx); err != nil {
 			w.log.WithError(err).Error("Initial scan failed")
 		}
 	}()
@@ -60,7 +63,10 @@ func (w *Worker) Start(ctx context.Context) {
 			}
 
 			w.log.Info("Running scheduled scan")
-			if err := w.scanner.ScanMovies(ctx); err != nil {
+			// Create a child context for each scan operation
+			scanCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			if err := w.scanner.ScanMovies(scanCtx); err != nil {
 				w.log.WithError(err).Error("Scheduled scan failed")
 			}
 		case <-cleanupTicker.C:
@@ -71,7 +77,10 @@ func (w *Worker) Start(ctx context.Context) {
 			}
 
 			w.log.Info("Running scheduled cleanup")
-			if err := w.scanner.CleanupOrphans(ctx); err != nil {
+			// Create a child context for each cleanup operation
+			cleanupCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			if err := w.scanner.CleanupOrphans(cleanupCtx); err != nil {
 				w.log.WithError(err).Error("Scheduled cleanup failed")
 			}
 		}
@@ -87,7 +96,10 @@ func (w *Worker) PerformScan(ctx context.Context) error {
 
 	w.log.Info("Triggering manual scan")
 	go func() {
-		if err := w.scanner.ScanMovies(ctx); err != nil {
+		// Create a child context that will be cancelled either by the provided context or app shutdown
+		scanCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		if err := w.scanner.ScanMovies(scanCtx); err != nil {
 			w.log.WithError(err).Error("Manual scan failed")
 		}
 	}()
@@ -103,7 +115,10 @@ func (w *Worker) PerformCleanup(ctx context.Context) error {
 
 	w.log.Info("Triggering manual cleanup")
 	go func() {
-		if err := w.scanner.CleanupOrphans(ctx); err != nil {
+		// Create a child context that will be cancelled either by the provided context or app shutdown
+		cleanupCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		if err := w.scanner.CleanupOrphans(cleanupCtx); err != nil {
 			w.log.WithError(err).Error("Manual cleanup failed")
 		}
 	}()

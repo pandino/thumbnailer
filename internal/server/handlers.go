@@ -89,9 +89,12 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Create a timeout context derived from the application context
+	// 30 minutes should be enough for a manual triggered scan
+	ctx, cancel := context.WithTimeout(s.appCtx, 30*time.Minute)
+
 	go func() {
-		// Use background context instead of request context
-		ctx := context.Background()
+		defer cancel() // Ensure context is cancelled when operation completes
 		if err := s.scanner.ScanMovies(ctx); err != nil {
 			s.log.WithError(err).Error("Scan failed")
 		}
@@ -108,9 +111,11 @@ func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Create a timeout context derived from the application context
+	ctx, cancel := context.WithTimeout(s.appCtx, 10*time.Minute)
+
 	go func() {
-		// Use background context instead of request context
-		ctx := context.Background()
+		defer cancel() // Ensure context is cancelled when operation completes
 		if err := s.scanner.CleanupOrphans(ctx); err != nil {
 			s.log.WithError(err).Error("Cleanup failed")
 		}
@@ -158,9 +163,12 @@ func (s *Server) handleProcessDeletions(w http.ResponseWriter, r *http.Request) 
 
 	deletedCount := stats.Deleted
 
+	// Create a timeout context derived from the application context
+	ctx, cancel := context.WithTimeout(s.appCtx, 15*time.Minute)
+
 	// Process the deletion queue
 	go func() {
-		ctx := context.Background()
+		defer cancel() // Ensure context is cancelled when operation completes
 		if err := s.scanner.CleanupOrphans(ctx); err != nil {
 			s.log.WithError(err).Error("Process deletions failed")
 		}

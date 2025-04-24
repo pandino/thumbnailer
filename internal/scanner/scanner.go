@@ -62,8 +62,16 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 
 	s.log.Info("Starting movie scan")
 
+	// Check if context is already done before starting
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		// Continue with scan
+	}
+
 	// Find all movie files
-	movieFiles, err := s.findMovieFiles()
+	movieFiles, err := s.findMovieFiles(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to find movie files: %w", err)
 	}
@@ -71,11 +79,19 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 	s.log.Infof("Found %d movie files", len(movieFiles))
 
 	// Process movies in parallel
-	g, ctx := errgroup.WithContext(ctx)
+	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(s.cfg.MaxWorkers)
 
 	for _, moviePath := range movieFiles {
 		moviePath := moviePath // Capture variable for goroutine
+
+		// Check if context is cancelled
+		select {
+		case <-gctx.Done():
+			return gctx.Err()
+		default:
+			// Continue processing
+		}
 
 		// Check if thumbnail already exists and is successful
 		movieFilename := filepath.Base(moviePath)
@@ -92,7 +108,7 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 
 		// Process the movie in parallel
 		g.Go(func() error {
-			return s.processMovie(ctx, moviePath)
+			return s.processMovie(gctx, moviePath)
 		})
 	}
 
@@ -100,6 +116,14 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 	if err := g.Wait(); err != nil {
 		s.log.WithError(err).Error("Error during movie processing")
 		return err
+	}
+
+	// Check context before continuing with cleanup
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		// Continue with cleanup
 	}
 
 	// Clean up orphaned entries and thumbnails
@@ -113,7 +137,7 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 }
 
 // findMovieFiles returns a list of all movie files in the input directory
-func (s *Scanner) findMovieFiles() ([]string, error) {
+func (s *Scanner) findMovieFiles(ctx context.Context) ([]string, error) {
 	var movieFiles []string
 
 	// Check if input directory exists
@@ -121,8 +145,24 @@ func (s *Scanner) findMovieFiles() ([]string, error) {
 		return nil, fmt.Errorf("movies directory does not exist: %s", s.cfg.MoviesDir)
 	}
 
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		// Continue processing
+	}
+
 	// Walk the directory and find movie files
 	err := filepath.Walk(s.cfg.MoviesDir, func(path string, info os.FileInfo, err error) error {
+		// Periodically check for context cancellation
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// Continue processing
+		}
+
 		if err != nil {
 			return err
 		}
@@ -159,6 +199,14 @@ func (s *Scanner) findMovieFiles() ([]string, error) {
 func (s *Scanner) processMovie(ctx context.Context, moviePath string) error {
 	s.log.WithField("movie", moviePath).Info("Processing movie")
 
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		// Continue processing
+	}
+
 	// Generate expected thumbnail filename
 	movieFilename := filepath.Base(moviePath)
 	thumbnailFilename := strings.TrimSuffix(movieFilename, filepath.Ext(movieFilename)) + ".jpg"
@@ -176,6 +224,14 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string) error {
 		// If thumbnail is not in the database, add it
 		if thumbnail == nil {
 			s.log.WithField("movie", moviePath).Info("Thumbnail file exists but not in database, adding entry")
+
+			// Check for context cancellation
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				// Continue processing
+			}
 
 			// Get video metadata for the database entry
 			metadata, err := s.thumbnailer.GetVideoMetadata(ctx, moviePath)
@@ -218,6 +274,14 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string) error {
 		}
 	}
 
+	// Check for context cancellation before creating thumbnail
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		// Continue processing
+	}
+
 	// Create thumbnail
 	thumbnail, err := s.thumbnailer.CreateThumbnail(ctx, moviePath)
 	if err != nil {
@@ -242,7 +306,13 @@ func (s *Scanner) CleanupOrphans(ctx context.Context) error {
 	// First, process items marked for deletion
 	if err := s.processDeletedItems(ctx); err != nil {
 		s.log.WithError(err).Error("Error processing deleted items")
-		// Continue with other cleanup steps
+		// Check if the context is done before continuing
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// Continue with other cleanup steps
+		}
 	}
 
 	// Get all thumbnails from database (except deleted ones that were just processed)
@@ -254,7 +324,17 @@ func (s *Scanner) CleanupOrphans(ctx context.Context) error {
 	var orphanedCount, missingCount int
 
 	// Check each thumbnail
-	for _, thumbnail := range thumbnails {
+	for i, thumbnail := range thumbnails {
+		// Periodically check for context cancellation
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				// Continue processing
+			}
+		}
+
 		// Skip already deleted thumbnails
 		if thumbnail.Status == models.StatusDeleted {
 			continue
@@ -289,6 +369,14 @@ func (s *Scanner) CleanupOrphans(ctx context.Context) error {
 
 	s.log.Infof("Cleanup completed: removed %d database entries for missing movies and deleted %d orphaned thumbnails", missingCount, orphanedCount)
 
+	// Check context before continuing
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		// Continue processing
+	}
+
 	// Find orphaned thumbnails (thumbnails without database entries)
 	return s.cleanupOrphanedThumbnails(ctx)
 }
@@ -317,7 +405,17 @@ func (s *Scanner) cleanupOrphanedThumbnails(ctx context.Context) error {
 
 	var orphanedCount int
 
-	for _, file := range files {
+	for i, file := range files {
+		// Check for context cancellation periodically
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				// Continue processing
+			}
+		}
+
 		if file.IsDir() {
 			continue
 		}
@@ -355,38 +453,43 @@ func (s *Scanner) processDeletedItems(ctx context.Context) error {
 
 	s.log.Infof("Processing %d items marked for deletion", len(thumbnails))
 
-	for _, thumbnail := range thumbnails {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			// Delete the thumbnail file if it exists
-			if thumbnail.ThumbnailPath != "" {
-				thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, thumbnail.ThumbnailPath)
-				if _, err := os.Stat(thumbnailPath); err == nil {
-					if err := os.Remove(thumbnailPath); err != nil {
-						s.log.WithError(err).WithField("thumbnail", thumbnailPath).Error("Failed to delete thumbnail file")
-					} else {
-						s.log.WithField("thumbnail", thumbnailPath).Info("Deleted thumbnail file")
-					}
+	for i, thumbnail := range thumbnails {
+		// Check for context cancellation periodically
+		if i%10 == 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				// Continue processing
+			}
+		}
+
+		// Delete the thumbnail file if it exists
+		if thumbnail.ThumbnailPath != "" {
+			thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, thumbnail.ThumbnailPath)
+			if _, err := os.Stat(thumbnailPath); err == nil {
+				if err := os.Remove(thumbnailPath); err != nil {
+					s.log.WithError(err).WithField("thumbnail", thumbnailPath).Error("Failed to delete thumbnail file")
+				} else {
+					s.log.WithField("thumbnail", thumbnailPath).Info("Deleted thumbnail file")
 				}
 			}
+		}
 
-			// Delete the movie file if it exists
-			fullMoviePath := filepath.Join(s.cfg.MoviesDir, thumbnail.MoviePath)
-			if _, err := os.Stat(fullMoviePath); err == nil {
-				if err := os.Remove(fullMoviePath); err != nil {
-					s.log.WithError(err).WithField("movie", fullMoviePath).Error("Failed to delete movie file")
-					// Don't remove from database on error so we can retry later
-					continue
-				}
-				s.log.WithField("movie", fullMoviePath).Info("Deleted movie file")
+		// Delete the movie file if it exists
+		fullMoviePath := filepath.Join(s.cfg.MoviesDir, thumbnail.MoviePath)
+		if _, err := os.Stat(fullMoviePath); err == nil {
+			if err := os.Remove(fullMoviePath); err != nil {
+				s.log.WithError(err).WithField("movie", fullMoviePath).Error("Failed to delete movie file")
+				// Don't remove from database on error so we can retry later
+				continue
 			}
+			s.log.WithField("movie", fullMoviePath).Info("Deleted movie file")
+		}
 
-			// Remove from database
-			if err := s.db.DeleteThumbnail(thumbnail.MoviePath); err != nil {
-				s.log.WithError(err).WithField("movie", thumbnail.MoviePath).Error("Failed to delete from database")
-			}
+		// Remove from database
+		if err := s.db.DeleteThumbnail(thumbnail.MoviePath); err != nil {
+			s.log.WithError(err).WithField("movie", thumbnail.MoviePath).Error("Failed to delete from database")
 		}
 	}
 
@@ -410,7 +513,7 @@ func (s *Scanner) GetStats() (*models.Stats, error) {
 }
 
 // DeleteMovie deletes a movie and its thumbnail
-func (s *Scanner) DeleteMovie(moviePath string) error {
+func (s *Scanner) DeleteMovie(ctx context.Context, moviePath string) error {
 	s.log.WithField("movie", moviePath).Info("Deleting movie and thumbnail")
 
 	// Get the thumbnail record
@@ -423,6 +526,14 @@ func (s *Scanner) DeleteMovie(moviePath string) error {
 		return fmt.Errorf("movie not found in database: %s", moviePath)
 	}
 
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		// Continue processing
+	}
+
 	// Delete the thumbnail file if it exists
 	if thumbnail.ThumbnailPath != "" {
 		thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, thumbnail.ThumbnailPath)
@@ -433,6 +544,14 @@ func (s *Scanner) DeleteMovie(moviePath string) error {
 				s.log.WithField("thumbnail", thumbnailPath).Info("Deleted thumbnail file")
 			}
 		}
+	}
+
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		// Continue processing
 	}
 
 	// Delete the movie file if it exists
