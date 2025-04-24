@@ -1,8 +1,11 @@
 package database
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"fmt"
+	"math/big"
+	mathrand "math/rand"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -200,17 +203,43 @@ func (d *DB) GetByThumbnailPath(thumbnailPath string) (*models.Thumbnail, error)
 
 // GetRandomUnviewedThumbnail gets a random unviewed thumbnail
 func (d *DB) GetRandomUnviewedThumbnail() (*models.Thumbnail, error) {
-	thumbnail := &models.Thumbnail{}
+	// First, count the total number of unviewed thumbnails
+	var count int
 	err := d.db.QueryRow(`
-        SELECT 
-            id, movie_path, movie_filename, thumbnail_path, 
-            created_at, updated_at, status, viewed,
-            width, height, duration, error_message
-        FROM thumbnails 
-        WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
-        ORDER BY RANDOM()
-        LIMIT 1
-    `).Scan(
+		SELECT COUNT(*) 
+		FROM thumbnails 
+		WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
+	`).Scan(&count)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to count unviewed thumbnails: %w", err)
+	}
+
+	// If no unviewed thumbnails, return nil
+	if count == 0 {
+		return nil, nil
+	}
+
+	// Generate a random offset
+	// We're using crypto/rand for better randomness
+	randomNum, err := rand.Int(rand.Reader, big.NewInt(int64(count)))
+	if err != nil {
+		// Fall back to math/rand if crypto/rand fails
+		offset := mathrand.Intn(count)
+		randomNum = big.NewInt(int64(offset))
+	}
+
+	// Get a random thumbnail using LIMIT and OFFSET
+	thumbnail := &models.Thumbnail{}
+	err = d.db.QueryRow(`
+		SELECT 
+			id, movie_path, movie_filename, thumbnail_path, 
+			created_at, updated_at, status, viewed,
+			width, height, duration, error_message
+		FROM thumbnails 
+		WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
+		LIMIT 1 OFFSET ?
+	`, randomNum.Int64()).Scan(
 		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
 		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
 		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
