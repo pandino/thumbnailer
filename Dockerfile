@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS builder
+FROM docker.io/golang:1.24-alpine AS builder
 
 WORKDIR /app
 
@@ -15,9 +15,10 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=1 GOOS=linux go build -a -o movie-thumbnailer ./cmd/movie-thumbnailer
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOOS=linux go build -a -o movie-thumbnailer ./cmd/movie-thumbnailer
 
-FROM alpine:3.21
+FROM docker.io/alpine:3.21
 
 LABEL maintainer="Movie Thumbnailer"
 LABEL description="A Go application for generating movie thumbnail mosaics with web interface"
