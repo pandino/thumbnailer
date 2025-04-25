@@ -59,7 +59,8 @@ func initSchema(db *sql.DB) error {
 			width INTEGER DEFAULT 0,
 			height INTEGER DEFAULT 0,
 			duration REAL DEFAULT 0,
-			error_message TEXT NOT NULL DEFAULT ''
+			error_message TEXT NOT NULL DEFAULT '',
+			source TEXT DEFAULT 'generated'
 		);
 		
 		-- Index for faster queries by status
@@ -67,6 +68,9 @@ func initSchema(db *sql.DB) error {
 		
 		-- Index for faster queries by viewed status
 		CREATE INDEX IF NOT EXISTS idx_thumbnails_viewed ON thumbnails(viewed);
+		
+		-- Index for faster queries by source
+		CREATE INDEX IF NOT EXISTS idx_thumbnails_source ON thumbnails(source);
 		
 		-- Trigger to update 'updated_at' on update
 		CREATE TRIGGER IF NOT EXISTS thumbnails_updated_at 
@@ -82,10 +86,15 @@ func initSchema(db *sql.DB) error {
 
 // Add creates a new thumbnail record in the database
 func (d *DB) Add(thumbnail *models.Thumbnail) error {
+	// Set default source if not specified
+	if thumbnail.Source == "" {
+		thumbnail.Source = models.SourceGenerated
+	}
+
 	_, err := d.db.Exec(`
 		INSERT OR REPLACE INTO thumbnails 
-		(movie_path, movie_filename, thumbnail_path, status, viewed, width, height, duration, error_message) 
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(movie_path, movie_filename, thumbnail_path, status, viewed, width, height, duration, error_message, source) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		thumbnail.MoviePath,
 		thumbnail.MovieFilename,
 		thumbnail.ThumbnailPath,
@@ -95,28 +104,30 @@ func (d *DB) Add(thumbnail *models.Thumbnail) error {
 		thumbnail.Height,
 		thumbnail.Duration,
 		thumbnail.ErrorMessage,
+		thumbnail.Source,
 	)
 	return err
 }
 
 // UpsertThumbnail performs a true upsert operation (insert or update) in a single query
 func (d *DB) UpsertThumbnail(thumbnail *models.Thumbnail) error {
+	// Set default source if not specified
+	if thumbnail.Source == "" {
+		thumbnail.Source = models.SourceGenerated
+	}
+
 	// SQLite supports "INSERT OR REPLACE" syntax for upsert operations
 	// For this to work correctly, we need to make sure movie_path is set as UNIQUE in the schema
-
-	// Note: This will reset the created_at timestamp if not provided
-	// If preserving created_at is important, we would need to fetch it first for existing records
-
 	_, err := d.db.Exec(`
         INSERT OR REPLACE INTO thumbnails 
         (id, movie_path, movie_filename, thumbnail_path, status, viewed, 
-         width, height, duration, error_message, 
+         width, height, duration, error_message, source,
          created_at, updated_at) 
         VALUES 
         (
             (SELECT id FROM thumbnails WHERE movie_path = ?), 
             ?, ?, ?, ?, ?, 
-            ?, ?, ?, ?, 
+            ?, ?, ?, ?, ?,
             COALESCE((SELECT created_at FROM thumbnails WHERE movie_path = ?), CURRENT_TIMESTAMP),
             CURRENT_TIMESTAMP
         )`,
@@ -130,6 +141,7 @@ func (d *DB) UpsertThumbnail(thumbnail *models.Thumbnail) error {
 		thumbnail.Height,
 		thumbnail.Duration,
 		thumbnail.ErrorMessage,
+		thumbnail.Source,
 		thumbnail.MoviePath, // For the created_at preservation
 	)
 
@@ -189,14 +201,14 @@ func (d *DB) GetByID(id int64) (*models.Thumbnail, error) {
 		SELECT 
 			id, movie_path, movie_filename, thumbnail_path, 
 			created_at, updated_at, status, viewed, 
-			width, height, duration, error_message
+			width, height, duration, error_message, source
 		FROM thumbnails 
 		WHERE id = ?`,
 		id,
 	).Scan(
 		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
 		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
-		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage, &thumbnail.Source,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -214,14 +226,14 @@ func (d *DB) GetByMoviePath(moviePath string) (*models.Thumbnail, error) {
 		SELECT 
 			id, movie_path, movie_filename, thumbnail_path, 
 			created_at, updated_at, status, viewed, 
-			width, height, duration, error_message
+			width, height, duration, error_message, source
 		FROM thumbnails 
 		WHERE movie_path = ?`,
 		moviePath,
 	).Scan(
 		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
 		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
-		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage, &thumbnail.Source,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -285,14 +297,14 @@ func (d *DB) GetRandomUnviewedThumbnail() (*models.Thumbnail, error) {
 		SELECT 
 			id, movie_path, movie_filename, thumbnail_path, 
 			created_at, updated_at, status, viewed,
-			width, height, duration, error_message
+			width, height, duration, error_message, source
 		FROM thumbnails 
 		WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
 		LIMIT 1 OFFSET ?
 	`, randomNum.Int64()).Scan(
 		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
 		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
-		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage, &thumbnail.Source,
 	)
 
 	if err == sql.ErrNoRows {
@@ -565,7 +577,9 @@ func (d *DB) GetStats() (*models.Stats, error) {
 			SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
 			SUM(CASE WHEN status = 'success' AND viewed = 1 THEN 1 ELSE 0 END) as viewed,
 			SUM(CASE WHEN status = 'success' AND viewed = 0 THEN 1 ELSE 0 END) as unviewed,
-			SUM(CASE WHEN status = 'deleted' THEN 1 ELSE 0 END) as deleted
+			SUM(CASE WHEN status = 'deleted' THEN 1 ELSE 0 END) as deleted,
+			SUM(CASE WHEN source = 'generated' THEN 1 ELSE 0 END) as generated,
+			SUM(CASE WHEN source = 'imported' THEN 1 ELSE 0 END) as imported
 		FROM thumbnails
 	`).Scan(
 		&stats.Total,
@@ -575,6 +589,8 @@ func (d *DB) GetStats() (*models.Stats, error) {
 		&stats.Viewed,
 		&stats.Unviewed,
 		&stats.Deleted,
+		&stats.Generated,
+		&stats.Imported,
 	)
 
 	return stats, err
@@ -588,7 +604,7 @@ func scanThumbnails(rows *sql.Rows) ([]*models.Thumbnail, error) {
 		err := rows.Scan(
 			&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
 			&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
-			&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+			&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage, &thumbnail.Source,
 		)
 		if err != nil {
 			return nil, err
