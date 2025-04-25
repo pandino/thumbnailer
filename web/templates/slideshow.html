@@ -35,7 +35,11 @@
         </div>
 
         <div class="thumbnail-display">
-            <img src="/thumbnails/{{.Thumbnail.ThumbnailPath}}" alt="{{.Thumbnail.MovieFilename}}" class="thumbnail-image {{if eq .Thumbnail.Status "deleted"}}pending-deletion{{end}}">
+            {{if eq .Thumbnail.Source "imported"}}
+            <div class="source-badge imported">Imported</div>
+            {{end}}
+            <img src="/thumbnails/{{.Thumbnail.ThumbnailPath}}" alt="{{.Thumbnail.MovieFilename}}" 
+                class="thumbnail-image {{if eq .Thumbnail.Status "deleted"}}pending-deletion{{end}} {{.Thumbnail.Source}}">
         </div>
 
         <div class="movie-details">
@@ -50,6 +54,10 @@
             <div class="detail-item">
                 <span class="detail-label">Created:</span>
                 <span class="detail-value">{{.Thumbnail.CreatedAt.Format "Jan 02, 2006 15:04:05"}}</span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Source:</span>
+                <span class="detail-value source-badge {{.Thumbnail.Source}}">{{.Thumbnail.Source}}</span>
             </div>
         </div>
 

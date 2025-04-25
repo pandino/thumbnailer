@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +17,10 @@ import (
 )
 
 func main() {
+	// Parse command-line flags
+	importFlag := flag.Bool("import-existing", false, "Import existing thumbnails without recreating them")
+	flag.Parse()
+
 	// Initialize logger
 	log := logrus.New()
 	log.SetOutput(os.Stdout)
@@ -25,6 +30,13 @@ func main() {
 
 	// Load configuration
 	cfg := config.New()
+
+	// Override config with command-line flags if provided
+	if *importFlag {
+		cfg.ImportExisting = true
+		log.Info("Import existing thumbnails mode enabled")
+	}
+
 	if cfg.Debug {
 		log.SetLevel(logrus.DebugLevel)
 	} else {

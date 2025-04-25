@@ -70,11 +70,17 @@ function renderThumbnails(container, thumbnails) {
             item.classList.add('pending-deletion');
         }
         
+        // Add class based on the source
+        if (thumbnail.source === 'imported') {
+            item.classList.add('imported');
+        }
+        
         let itemContent = '';
         if (isDeletedContainer) {
             // For deleted items, don't link to slideshow but add undo button
             itemContent = `
                 <div class="thumbnail-wrapper">
+                    ${thumbnail.source === 'imported' ? '<span class="source-badge imported">Imported</span>' : ''}
                     <img src="/thumbnails/${thumbnail.thumbnail_path}" alt="${thumbnail.movie_filename}">
                     <div class="thumbnail-info">
                         <div class="thumbnail-title">${thumbnail.movie_filename}</div>
@@ -90,12 +96,14 @@ function renderThumbnails(container, thumbnails) {
             // For non-deleted items, link to slideshow
             itemContent = `
                 <a href="/slideshow?id=${thumbnail.id}">
+                    ${thumbnail.source === 'imported' ? '<span class="source-badge imported">Imported</span>' : ''}
                     <img src="/thumbnails/${thumbnail.thumbnail_path}" alt="${thumbnail.movie_filename}">
                     <div class="thumbnail-info">
                         <div class="thumbnail-title">${thumbnail.movie_filename}</div>
                         <div class="thumbnail-meta">
                             <span>${formatDuration(thumbnail.duration)}</span>
                             <span>${formatDate(thumbnail.created_at)}</span>
+                            ${thumbnail.source ? `<span class="source-label">${thumbnail.source}</span>` : ''}
                         </div>
                     </div>
                 </a>

@@ -45,6 +45,7 @@ func (t *Thumbnailer) CreateThumbnail(ctx context.Context, moviePath string, db 
 		MovieFilename: movieFilename,
 		ThumbnailPath: thumbnailFilename,
 		Status:        "pending",
+		Source:        models.SourceGenerated, // Set source as generated
 	}
 
 	// Save the pending status to the database right away

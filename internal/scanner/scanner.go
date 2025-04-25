@@ -221,6 +221,7 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 		MovieFilename: movieFilename,
 		ThumbnailPath: thumbnailFilename,
 		Status:        models.StatusPending,
+		Source:        models.SourceGenerated, // Default source
 	}
 
 	// Check if thumbnail file already exists on disk
@@ -229,8 +230,7 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 		fileExists = true
 	}
 
-	// Get existing record if any - this doesn't cause an extra query because
-	// our UpsertThumbnail implementation will do this check internally
+	// Get existing record if any
 	existingThumbnail, err := s.db.GetByMoviePath(movieFilename)
 	if err != nil {
 		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to check database")
@@ -248,6 +248,49 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 		thumbnail.ID = existingThumbnail.ID
 		thumbnail.CreatedAt = existingThumbnail.CreatedAt
 		thumbnail.Viewed = existingThumbnail.Viewed
+		// Only preserve source if it's already set to imported
+		if existingThumbnail.Source == models.SourceImported {
+			thumbnail.Source = models.SourceImported
+		}
+	}
+
+	// Check if thumbnail exists but no DB entry (or entry not success)
+	if fileExists && s.cfg.ImportExisting &&
+		(existingThumbnail == nil || existingThumbnail.Status != models.StatusSuccess) {
+
+		s.log.WithField("movie", moviePath).Info("Existing thumbnail found, importing")
+
+		// Get video metadata to complete the thumbnail record
+		metadata, err := s.thumbnailer.GetVideoMetadata(ctx, moviePath)
+		if err != nil {
+			s.log.WithError(err).WithField("movie", moviePath).Error("Failed to get video metadata for import")
+			thumbnail.Status = models.StatusError
+			thumbnail.ErrorMessage = fmt.Sprintf("Failed to get video metadata for import: %v", err)
+		} else {
+			// Update thumbnail with metadata and set as imported
+			thumbnail.Duration = metadata.Duration
+			thumbnail.Width = metadata.Width
+			thumbnail.Height = metadata.Height
+			thumbnail.Status = models.StatusSuccess
+			thumbnail.Source = models.SourceImported
+			thumbnail.ErrorMessage = ""
+		}
+
+		// Save the thumbnail record
+		if err := s.db.UpsertThumbnail(thumbnail); err != nil {
+			s.log.WithError(err).WithField("movie", moviePath).Error("Failed to save imported thumbnail")
+			return fmt.Errorf("failed to save imported thumbnail for movie %s: %w", moviePath, err)
+		}
+
+		s.log.WithFields(logrus.Fields{
+			"movie":      moviePath,
+			"status":     thumbnail.Status,
+			"source":     thumbnail.Source,
+			"duration":   thumbnail.Duration,
+			"resolution": fmt.Sprintf("%dx%d", thumbnail.Width, thumbnail.Height),
+		}).Info("Imported existing thumbnail")
+
+		return nil
 	}
 
 	// Save the pending status - this ensures other processes know this movie is being processed
@@ -265,7 +308,7 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 		// Continue processing
 	}
 
-	// Generate the thumbnail
+	// Generate the thumbnail - this will now set source as 'generated'
 	generatedThumbnail, err := s.thumbnailer.CreateThumbnail(ctx, moviePath, s.db)
 	if err != nil {
 		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to create thumbnail")
@@ -288,6 +331,7 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 	thumbnail.Height = generatedThumbnail.Height
 	thumbnail.Duration = generatedThumbnail.Duration
 	thumbnail.ErrorMessage = generatedThumbnail.ErrorMessage
+	thumbnail.Source = generatedThumbnail.Source
 
 	// Save the final status
 	if err := s.db.UpsertThumbnail(thumbnail); err != nil {
@@ -298,6 +342,7 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 	s.log.WithFields(logrus.Fields{
 		"movie":      moviePath,
 		"status":     thumbnail.Status,
+		"source":     thumbnail.Source,
 		"duration":   thumbnail.Duration,
 		"resolution": fmt.Sprintf("%dx%d", thumbnail.Width, thumbnail.Height),
 	}).Info("Processed movie")

@@ -9,39 +9,13 @@ A Go application for generating and managing thumbnail mosaics from movie files.
 - Maintains a SQLite database to track relationships
 - Provides a web interface for browsing and managing thumbnails
 - Runs as a containerized application with minimal dependencies
+- Supports importing existing thumbnails without regenerating them
 
 ## Prerequisites
 
 - Docker
-- Docker Compose (optional, but recommended)
 
 ## Quick Start
-
-### Using Docker Compose (Recommended)
-
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/pandino/movie-thumbnailer-go.git
-   cd movie-thumbnailer-go
-   ```
-
-2. Create directories for movies, thumbnails, and data:
-   ```bash
-   mkdir -p movies thumbnails data
-   ```
-
-3. Place your movie files in the `movies` directory.
-
-4. Build and run the container:
-   ```bash
-   # Build the container
-   docker-compose build
-
-   # Run the container
-   docker-compose up -d
-   ```
-
-5. Access the web interface at http://localhost:8080
 
 ### Using Docker Directly
 
@@ -61,6 +35,31 @@ A Go application for generating and managing thumbnail mosaics from movie files.
    ```
 
 3. Access the web interface at http://localhost:8080
+
+### Importing Existing Thumbnails
+
+If you already have thumbnail files generated and want to import them without regenerating, use the `--import-existing` flag:
+
+```bash
+# Using Docker
+docker run -d --name movie-thumbnailer \
+  -v "$(pwd)/movies:/movies:ro" \
+  -v "$(pwd)/thumbnails:/thumbnails" \
+  -v "$(pwd)/data:/data" \
+  -p 8080:8080 \
+  movie-thumbnailer-go --import-existing
+
+# Or update your docker-compose.yml file to include:
+# command: ["--import-existing"]
+```
+
+You can also set the environment variable `IMPORT_EXISTING=true` to enable this feature.
+
+When using this feature:
+- Existing thumbnails will be marked with a special "imported" source tag
+- Metadata (duration, resolution, etc.) will be extracted from the original movie file
+- The thumbnail file won't be regenerated, saving processing time
+- Imported thumbnails can be browsed, viewed, and managed just like generated ones
 
 ## Configuration
 
@@ -84,6 +83,34 @@ You can configure the application by setting environment variables:
 ### Background Task Settings
 - `SCAN_INTERVAL`: Interval between background scans (default: `1h`)
 - `DEBUG`: Enable debug logging (default: `false`)
+- `IMPORT_EXISTING`: Import existing thumbnails without regenerating (default: `false`)
+
+## Database Schema
+
+Thumbnails are stored in a SQLite database with the following schema:
+
+```sql
+CREATE TABLE thumbnails (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    movie_path TEXT NOT NULL UNIQUE,
+    movie_filename TEXT NOT NULL,
+    thumbnail_path TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status TEXT DEFAULT 'pending',
+    viewed INTEGER DEFAULT 0,
+    width INTEGER DEFAULT 0,
+    height INTEGER DEFAULT 0,
+    duration REAL DEFAULT 0,
+    error_message TEXT NOT NULL DEFAULT '',
+    source TEXT DEFAULT 'generated'
+);
+```
+
+Key fields:
+- `status`: Current processing status ('pending', 'success', 'error', 'deleted')
+- `viewed`: Whether the thumbnail has been viewed by the user (0 or 1)
+- `source`: How the thumbnail was created ('generated' or 'imported')
 
 ## Web Interface
 

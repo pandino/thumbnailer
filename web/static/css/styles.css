@@ -154,6 +154,16 @@ section h2 {
     border-left: 4px solid var(--error-color);
 }
 
+.stat-box.generated {
+    background-color: rgba(46, 204, 113, 0.05);
+    border-left: 4px solid #27ae60;
+}
+
+.stat-box.imported {
+    background-color: rgba(155, 89, 182, 0.1);
+    border-left: 4px solid #9b59b6;
+}
+
 /* Actions Panel */
 .actions-grid {
     display: grid;
@@ -362,6 +372,33 @@ section h2 {
 
 .thumbnail-item.pending-deletion img {
     filter: grayscale(50%);
+}
+
+/* Indicator badges for thumbnails based on source */
+.thumbnail-item .source-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 2px 6px;
+    border-radius: 3px;
+    z-index: 2;
+}
+
+.thumbnail-item .source-badge.imported {
+    background-color: #9b59b6;
+    color: white;
+}
+
+.thumbnail-item .source-badge.generated {
+    background-color: #27ae60;
+    color: white;
+}
+
+/* Optional: Add a subtle border to imported thumbnails */
+.thumbnail-item.imported img {
+    border: 2px solid #9b59b6;
 }
 
 .thumbnail-wrapper {
