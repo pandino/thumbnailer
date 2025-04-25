@@ -247,15 +247,15 @@ func (d *DB) GetByThumbnailPath(thumbnailPath string) (*models.Thumbnail, error)
 	err := d.db.QueryRow(`
 		SELECT 
 			id, movie_path, movie_filename, thumbnail_path, 
-			created_at, updated_at, status, viewed, 
-			width, height, duration, error_message
+			created_at, updated_at, status, viewed,
+			width, height, duration, error_message, source
 		FROM thumbnails 
 		WHERE thumbnail_path = ?`,
 		thumbnailPath,
 	).Scan(
 		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
 		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
-		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage, &thumbnail.Source,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -320,7 +320,7 @@ func (d *DB) GetDeletedThumbnails() ([]*models.Thumbnail, error) {
         SELECT 
             id, movie_path, movie_filename, thumbnail_path, 
             created_at, updated_at, status, viewed,
-            width, height, duration, error_message
+            width, height, duration, error_message, source
         FROM thumbnails 
         WHERE status = 'deleted'
         ORDER BY updated_at DESC
@@ -341,7 +341,7 @@ func (d *DB) GetFirstUnviewedThumbnail() (*models.Thumbnail, error) {
         SELECT 
             id, movie_path, movie_filename, thumbnail_path, 
             created_at, updated_at, status, viewed,
-            width, height, duration, error_message
+            width, height, duration, error_message, source
         FROM thumbnails 
         WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
         ORDER BY id ASC
@@ -349,7 +349,7 @@ func (d *DB) GetFirstUnviewedThumbnail() (*models.Thumbnail, error) {
     `).Scan(
 		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
 		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
-		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage, &thumbnail.Source,
 	)
 
 	if err == sql.ErrNoRows {
@@ -366,7 +366,7 @@ func (d *DB) GetNextUnviewedThumbnail(currentID int64) (*models.Thumbnail, error
         SELECT 
             id, movie_path, movie_filename, thumbnail_path, 
             created_at, updated_at, status, viewed,
-            width, height, duration, error_message
+            width, height, duration, error_message, source
         FROM thumbnails 
         WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND id > ?
         ORDER BY id ASC
@@ -374,7 +374,7 @@ func (d *DB) GetNextUnviewedThumbnail(currentID int64) (*models.Thumbnail, error
     `, currentID).Scan(
 		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
 		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
-		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage, &thumbnail.Source,
 	)
 
 	if err == sql.ErrNoRows {
@@ -396,7 +396,7 @@ func (d *DB) GetPreviousThumbnail(currentID int64) (*models.Thumbnail, error) {
         SELECT 
             id, movie_path, movie_filename, thumbnail_path, 
             created_at, updated_at, status, viewed,
-            width, height, duration, error_message
+            width, height, duration, error_message, source
         FROM thumbnails 
         WHERE status = 'success' AND status != 'deleted' AND id < ?
         ORDER BY id DESC
@@ -404,7 +404,7 @@ func (d *DB) GetPreviousThumbnail(currentID int64) (*models.Thumbnail, error) {
     `, currentID).Scan(
 		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
 		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
-		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.ErrorMessage, &thumbnail.Source,
 	)
 
 	if err == sql.ErrNoRows {
@@ -444,7 +444,7 @@ func (d *DB) GetUnviewedThumbnails() ([]*models.Thumbnail, error) {
         SELECT 
             id, movie_path, movie_filename, thumbnail_path, 
             created_at, updated_at, status, viewed,
-            width, height, duration, error_message
+            width, height, duration, error_message, source
         FROM thumbnails 
         WHERE status = 'success' AND viewed = 0
         ORDER BY updated_at DESC
@@ -464,7 +464,7 @@ func (d *DB) GetViewedThumbnails() ([]*models.Thumbnail, error) {
 		SELECT 
 			id, movie_path, movie_filename, thumbnail_path, 
 			created_at, updated_at, status, viewed,
-			width, height, duration, error_message
+			width, height, duration, error_message, source
 		FROM thumbnails 
 		WHERE status = 'success' AND viewed = 1
 		ORDER BY created_at DESC`,
@@ -483,7 +483,7 @@ func (d *DB) GetPendingThumbnails() ([]*models.Thumbnail, error) {
 		SELECT 
 			id, movie_path, movie_filename, thumbnail_path, 
 			created_at, updated_at, status, viewed,
-			width, height, duration, error_message
+			width, height, duration, error_message, source
 		FROM thumbnails 
 		WHERE status = 'pending'
 		ORDER BY created_at DESC`,
@@ -502,7 +502,7 @@ func (d *DB) GetErrorThumbnails() ([]*models.Thumbnail, error) {
 		SELECT 
 			id, movie_path, movie_filename, thumbnail_path, 
 			created_at, updated_at, status, viewed,
-			width, height, duration, error_message
+			width, height, duration, error_message, source
 		FROM thumbnails 
 		WHERE status = 'error'
 		ORDER BY created_at DESC`,
@@ -521,7 +521,7 @@ func (d *DB) GetAllThumbnails() ([]*models.Thumbnail, error) {
 		SELECT 
 			id, movie_path, movie_filename, thumbnail_path, 
 			created_at, updated_at, status, viewed,
-			width, height, duration, error_message
+			width, height, duration, error_message, source
 		FROM thumbnails
 		ORDER BY created_at DESC`,
 	)
