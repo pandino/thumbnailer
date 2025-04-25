@@ -41,22 +41,28 @@ tasks:
           echo "Build Date: {{.BUILD_DATE}}"
 
   publish:
-    desc: Publish the container image to Docker Hub (only versioned or latest)
+    desc: Publish the container image to Docker Hub
     deps: [build]
     vars:
-      IS_TAG:
-        sh: git describe --exact-match --tags 2>/dev/null && echo "true" || echo "false"
       IS_MAIN:
         sh: git branch --show-current | grep -q '^main$' && echo "true" || echo "false"
+      TAG:
+        sh: git describe --exact-match --tags 2>/dev/null || echo ""
+      IS_DIRTY:
+        sh: git diff --quiet || echo "true"
     cmds:
-      - cmd: echo "Checking if we should publish..."
+      - cmd: echo "Checking publishing conditions..."
       - cmd: |
-          if [ "{{.IS_TAG}}" = "true" ]; then
+          # If we have a tag and not dirty, publish both versioned and latest
+          if [ -n "{{.TAG}}" ] && [ -z "{{.IS_DIRTY}}" ]; then
             echo "Publishing versioned image {{.IMAGE_NAME}}:{{.VERSION}}"
             podman push {{.IMAGE_NAME}}:{{.VERSION}}
+            echo "Also publishing latest tag"
+            podman push {{.IMAGE_NAME}}:latest
+          # If on main branch, always push latest
           elif [ "{{.IS_MAIN}}" = "true" ]; then
-            echo "Publishing latest image from main branch"
+            echo "On main branch, publishing latest image"
             podman push {{.IMAGE_NAME}}:latest
           else
-            echo "Skipping publish: not on a tag or main branch"
+            echo "Skipping publish: not a clean tagged commit or on main branch"
           fi
