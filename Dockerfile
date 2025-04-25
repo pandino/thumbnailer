@@ -14,6 +14,15 @@ RUN go mod download
 # Copy source code
 COPY . .
 
+# Add build arguments
+ARG VERSION="0.0.0-dev"
+ARG COMMIT="unknown"
+ARG BUILD_DATE="unknown"
+
+# Add a version.go file to store version information
+RUN printf 'package main\n\nvar (\n    version   = "%s"\n    commit    = "%s"\n    buildDate = "%s"\n)\n' \
+    "$VERSION" "$COMMIT" "$BUILD_DATE" > ./cmd/movie-thumbnailer/version.go
+
 # Build the application
 RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=1 GOOS=linux go build -o movie-thumbnailer ./cmd/movie-thumbnailer
@@ -22,6 +31,9 @@ FROM docker.io/alpine:3.21
 
 LABEL maintainer="Movie Thumbnailer"
 LABEL description="A Go application for generating movie thumbnail mosaics with web interface"
+LABEL version="${VERSION}"
+LABEL commit="${COMMIT}"
+LABEL build_date="${BUILD_DATE}"
 
 # Install runtime dependencies
 RUN apk add --no-cache \
@@ -66,7 +78,4 @@ VOLUME ["/movies", "/thumbnails", "/data"]
 EXPOSE 8080
 
 # Use dumb-init as entrypoint to handle signals properly
-ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-
-# Run the application
-CMD ["/app/movie-thumbnailer"]
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "/app/movie-thumbnailer"]

@@ -1,0 +1,62 @@
+version: '3'
+
+vars:
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev"
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+  BUILD_DATE:
+    sh: date -u '+%Y-%m-%d %H:%M:%S'
+  BUILD_ARGS: --build-arg VERSION={{.VERSION}} --build-arg COMMIT={{.COMMIT}} --build-arg BUILD_DATE="{{.BUILD_DATE}}"
+  APP_NAME: thumbnailer
+  IMAGE_NAME: docker.io/pandino/{{.APP_NAME}}
+
+tasks:
+  default:
+    desc: Build the container image
+    cmds:
+      - task: build
+
+  build:
+    desc: Build the container image with embedded version information
+    vars:
+      TAG_ARGS: --tag {{.IMAGE_NAME}}:{{.VERSION}} --tag {{.IMAGE_NAME}}:latest --tag {{.APP_NAME}}:{{.VERSION}} --tag {{.APP_NAME}}:latest
+    cmds:
+      - echo "Building container with version {{.VERSION}}, commit {{.COMMIT}}"
+      - podman build {{.BUILD_ARGS}} {{.TAG_ARGS}} .
+
+  test:
+    desc: Run tests in a temporary container
+    cmds:
+      - podman run --rm -v "$(pwd):/app" -w /app golang:1.24-alpine sh -c "go test -v ./..."
+
+  version:
+    desc: Display the current version information
+    cmds:
+      - cmd: |
+          echo "Version: {{.VERSION}}"
+      - cmd: |
+          echo "Commit: {{.COMMIT}}"
+      - cmd: |
+          echo "Build Date: {{.BUILD_DATE}}"
+
+  publish:
+    desc: Publish the container image to Docker Hub (only versioned or latest)
+    deps: [build]
+    vars:
+      IS_TAG:
+        sh: git describe --exact-match --tags 2>/dev/null && echo "true" || echo "false"
+      IS_MAIN:
+        sh: git branch --show-current | grep -q '^main$' && echo "true" || echo "false"
+    cmds:
+      - cmd: echo "Checking if we should publish..."
+      - cmd: |
+          if [ "{{.IS_TAG}}" = "true" ]; then
+            echo "Publishing versioned image {{.IMAGE_NAME}}:{{.VERSION}}"
+            podman push {{.IMAGE_NAME}}:{{.VERSION}}
+          elif [ "{{.IS_MAIN}}" = "true" ]; then
+            echo "Publishing latest image from main branch"
+            podman push {{.IMAGE_NAME}}:latest
+          else
+            echo "Skipping publish: not on a tag or main branch"
+          fi

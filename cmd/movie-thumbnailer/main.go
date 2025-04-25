@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,10 +17,27 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Note: These variables are declared in version.go
+// which is created during the container build process.
+// var (
+//     version   string
+//     commit    string
+//     buildDate string
+// )
+
 func main() {
-	// Parse command-line flags
+	// Define all command-line flags
 	importFlag := flag.Bool("import-existing", false, "Import existing thumbnails without recreating them")
+	versionFlag := flag.Bool("version", false, "Print version information and exit")
+
+	// Parse all flags once
 	flag.Parse()
+
+	// Handle version flag
+	if *versionFlag {
+		fmt.Printf("Movie Thumbnailer %s (commit: %s, built: %s)\n", version, commit, buildDate)
+		os.Exit(0)
+	}
 
 	// Initialize logger
 	log := logrus.New()
