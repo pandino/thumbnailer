@@ -16,7 +16,7 @@ COPY . .
 
 # Build the application
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 GOOS=linux go build -a -o movie-thumbnailer ./cmd/movie-thumbnailer
+    CGO_ENABLED=1 GOOS=linux go build -o movie-thumbnailer ./cmd/movie-thumbnailer
 
 FROM docker.io/alpine:3.21
 

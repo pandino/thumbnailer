@@ -1,6 +1,6 @@
 # Movie Thumbnailer
 
-A Go application for generating and managing thumbnail mosaics from movie files. This project replaces the original shell script-based solution with a modern, containerized Go application that includes a web interface for viewing and managing thumbnails.
+A Go application for generating and managing thumbnail mosaics from movie files. This project provides a modern, containerized Go application that includes a web interface for viewing and managing thumbnails.
 
 ## Features
 
@@ -13,20 +13,20 @@ A Go application for generating and managing thumbnail mosaics from movie files.
 
 ## Prerequisites
 
-- Docker
+- Podman
 
 ## Quick Start
 
-### Using Docker Directly
+### Using Podman
 
-1. Build the Docker image:
+1. Build the container image:
    ```bash
-   docker build -t movie-thumbnailer-go .
+   podman build -t movie-thumbnailer-go .
    ```
 
 2. Run the container:
    ```bash
-   docker run -d --name movie-thumbnailer \
+   podman run -d --name movie-thumbnailer \
      -v "$(pwd)/movies:/movies:ro" \
      -v "$(pwd)/thumbnails:/thumbnails" \
      -v "$(pwd)/data:/data" \
@@ -41,16 +41,12 @@ A Go application for generating and managing thumbnail mosaics from movie files.
 If you already have thumbnail files generated and want to import them without regenerating, use the `--import-existing` flag:
 
 ```bash
-# Using Docker
-docker run -d --name movie-thumbnailer \
+podman run -d --name movie-thumbnailer \
   -v "$(pwd)/movies:/movies:ro" \
   -v "$(pwd)/thumbnails:/thumbnails" \
   -v "$(pwd)/data:/data" \
   -p 8080:8080 \
   movie-thumbnailer-go --import-existing
-
-# Or update your docker-compose.yml file to include:
-# command: ["--import-existing"]
 ```
 
 You can also set the environment variable `IMPORT_EXISTING=true` to enable this feature.
@@ -128,6 +124,7 @@ The application provides two main pages:
   - Left arrow: Previous thumbnail
   - 'M': Mark current thumbnail as viewed
   - 'D': Delete current thumbnail/movie
+  - 'R': Reset history
   - 'ESC': Return to control page
 
 ## Development
