@@ -19,17 +19,20 @@ type Thumbnail struct {
 	Height        int       `json:"height"`
 	Duration      float64   `json:"duration"`
 	ErrorMessage  string    `json:"error_message,omitempty"`
+	Source        string    `json:"source"`
 }
 
 // Stats represents statistics about the thumbnails
 type Stats struct {
-	Total    int `json:"total"`
-	Success  int `json:"success"`
-	Error    int `json:"error"`
-	Pending  int `json:"pending"`
-	Viewed   int `json:"viewed"`
-	Unviewed int `json:"unviewed"`
-	Deleted  int `json:"deleted"`
+	Total     int `json:"total"`
+	Success   int `json:"success"`
+	Error     int `json:"error"`
+	Pending   int `json:"pending"`
+	Viewed    int `json:"viewed"`
+	Unviewed  int `json:"unviewed"`
+	Deleted   int `json:"deleted"`
+	Generated int `json:"generated"`
+	Imported  int `json:"imported"`
 }
 
 // Constants for thumbnail status values
@@ -40,10 +43,26 @@ const (
 	StatusDeleted = "deleted"
 )
 
+// Constants for thumbnail source values
+const (
+	SourceGenerated = "generated"
+	SourceImported  = "imported"
+)
+
 // ValidStatus checks if a status value is valid
 func ValidStatus(status string) bool {
 	switch status {
 	case StatusPending, StatusSuccess, StatusError, StatusDeleted:
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidSource checks if a source value is valid
+func ValidSource(source string) bool {
+	switch source {
+	case SourceGenerated, SourceImported:
 		return true
 	default:
 		return false
@@ -83,6 +102,11 @@ func (t *Thumbnail) IsError() bool {
 // IsDeleted returns true if the thumbnail is marked for deletion
 func (t *Thumbnail) IsDeleted() bool {
 	return t.Status == StatusDeleted
+}
+
+// IsImported returns true if the thumbnail was imported rather than generated
+func (t *Thumbnail) IsImported() bool {
+	return t.Source == SourceImported
 }
 
 // GetDurationFormatted returns the duration in a human-readable format
