@@ -854,6 +854,17 @@ func (s *Server) handleThumbnails(w http.ResponseWriter, r *http.Request) {
 	// Get query parameters
 	status := r.URL.Query().Get("status")
 	viewed := r.URL.Query().Get("viewed")
+	limitStr := r.URL.Query().Get("limit")
+
+	// Default limit of 10 if not specified
+	limit := 10
+	if limitStr != "" {
+		var err error
+		limit, err = strconv.Atoi(limitStr)
+		if err != nil {
+			limit = 10 // Default to 10 on parse error
+		}
+	}
 
 	var thumbnails []*models.Thumbnail
 	var err error
@@ -868,7 +879,7 @@ func (s *Server) handleThumbnails(w http.ResponseWriter, r *http.Request) {
 	} else if status == "error" {
 		thumbnails, err = s.db.GetErrorThumbnails()
 	} else if status == "deleted" {
-		thumbnails, err = s.db.GetDeletedThumbnails()
+		thumbnails, err = s.db.GetDeletedThumbnails(limit)
 	} else {
 		thumbnails, err = s.db.GetAllThumbnails()
 	}

@@ -498,7 +498,7 @@ func (s *Scanner) cleanupOrphanedThumbnails(ctx context.Context) error {
 // processDeletedItems processes all items marked for deletion
 func (s *Scanner) processDeletedItems(ctx context.Context) error {
 	// Get all thumbnails marked for deletion
-	thumbnails, err := s.db.GetDeletedThumbnails()
+	thumbnails, err := s.db.GetDeletedThumbnails(0)
 	if err != nil {
 		return fmt.Errorf("failed to get deleted thumbnails: %w", err)
 	}

@@ -314,18 +314,30 @@ func (d *DB) GetRandomUnviewedThumbnail() (*models.Thumbnail, error) {
 	return thumbnail, err
 }
 
-// GetDeletedThumbnails retrieves all thumbnails marked for deletion
-func (d *DB) GetDeletedThumbnails() ([]*models.Thumbnail, error) {
-	rows, err := d.db.Query(`
+// GetDeletedThumbnails retrieves thumbnails marked for deletion
+// If limit > 0, only that many items will be returned
+// If limit = 0, all matching thumbnails will be returned
+func (d *DB) GetDeletedThumbnails(limit int) ([]*models.Thumbnail, error) {
+
+	var rows *sql.Rows
+	var err error
+
+	query := `
         SELECT 
             id, movie_path, movie_filename, thumbnail_path, 
             created_at, updated_at, status, viewed,
             width, height, duration, error_message, source
         FROM thumbnails 
         WHERE status = 'deleted'
-        ORDER BY updated_at DESC
-        LIMIT 10`,
-	)
+        ORDER BY updated_at DESC`
+
+	// Add limit clause if a limit is specified
+	if limit > 0 {
+		rows, err = d.db.Query(query+" LIMIT ?", limit)
+	} else {
+		rows, err = d.db.Query(query)
+	}
+
 	if err != nil {
 		return nil, err
 	}
