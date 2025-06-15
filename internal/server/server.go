@@ -96,6 +96,7 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/api/stats", s.handleStats).Methods("GET")
 	s.router.HandleFunc("/api/thumbnails", s.handleThumbnails).Methods("GET")
 	s.router.HandleFunc("/api/thumbnails/{id}", s.handleThumbnail).Methods("GET")
+	s.router.HandleFunc("/api/slideshow/next-image", s.handleSlideshowNextImage).Methods("GET")
 
 	// 404 handler
 	s.router.NotFoundHandler = http.HandlerFunc(s.handleNotFound)

@@ -67,6 +67,8 @@ function navigateToNext() {
     const nextButton = document.querySelector('.nav-button.next');
     if (nextButton) {
         nextButton.click();
+        // Preload the next image after navigation
+        setTimeout(preloadNextImage, 1000);
     }
 }
 
@@ -75,6 +77,8 @@ function navigateToPrevious() {
     const prevButton = document.querySelector('.nav-button.prev');
     if (prevButton && !prevButton.classList.contains('disabled')) {
         prevButton.click();
+        // Preload the next image after navigation
+        setTimeout(preloadNextImage, 1000);
     }
 }
 
@@ -83,6 +87,8 @@ function resetHistory() {
     const resetButton = document.querySelector('.nav-button.reset-history');
     if (resetButton) {
         resetButton.click();
+        // Preload the next image after reset
+        setTimeout(preloadNextImage, 1000);
     }
 }
 
@@ -170,15 +176,36 @@ function submitFormAjax(form, callback) {
 
 // Preload next image for smoother navigation
 function preloadNextImage() {
-    // Note: This function is currently disabled because it was causing
-    // unintended navigation by making actual requests to the slideshow endpoint.
-    // TODO: Implement proper image preloading without triggering navigation
-    
-    // const nextLink = document.querySelector('.nav-button.next');
-    // if (nextLink) {
-    //     // This was making actual requests to /slideshow/next which triggered navigation!
-    //     // We need a different approach to preload images
-    // }
+    // Only preload if we have an active slideshow session
+    fetch('/api/slideshow/next-image', {
+        method: 'GET',
+        credentials: 'same-origin' // Include cookies
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.json();
+        }
+        // Silently ignore errors to not break the UI
+        return null;
+    })
+    .then(data => {
+        if (data && data.hasNext && data.thumbnailPath) {
+            // Create a new Image object to preload the thumbnail
+            const img = new Image();
+            img.src = '/thumbnails/' + data.thumbnailPath;
+            
+            // Store reference to prevent garbage collection
+            window.preloadedImage = img;
+            
+            console.debug('Preloaded next image:', data.movieFilename);
+        } else {
+            console.debug('No next image to preload');
+        }
+    })
+    .catch(error => {
+        // Silently log error - don't break the UI
+        console.debug('Failed to preload next image:', error);
+    });
 }
 
 // Call preload function when page loads

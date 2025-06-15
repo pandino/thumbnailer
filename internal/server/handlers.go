@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/pandino/movie-thumbnailer-go/internal/models" // Add missing import
+	"github.com/sirupsen/logrus"
 )
 
 type SessionData struct {
@@ -21,6 +22,7 @@ type SessionData struct {
 	CurrentID   int64 `json:"current_id"`
 	StartedAt   int64 `json:"started_at"`
 	PreviousID  int64 `json:"previous_id"` // Store previous thumbnail ID for single undo
+	NextID      int64 `json:"next_id"`     // Store next thumbnail ID for coordination with prefetcher
 }
 
 // handleControlPage renders the control page
@@ -203,6 +205,7 @@ func (s *Server) handleResetHistory(w http.ResponseWriter, r *http.Request) {
 					CurrentID:   0,
 					StartedAt:   time.Now().Unix(),
 					PreviousID:  0,
+					NextID:      0,
 				}
 			}
 		}
@@ -210,6 +213,8 @@ func (s *Server) handleResetHistory(w http.ResponseWriter, r *http.Request) {
 
 	// Reset the previous ID but keep other session data
 	session.PreviousID = 0
+	// Also reset NextID since we're starting fresh
+	session.NextID = 0
 
 	// Save the updated session
 	sessionJSON, err := json.Marshal(session)
@@ -279,8 +284,9 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 			CurrentID:   0,
 			StartedAt:   time.Now().Unix(),
 			PreviousID:  0, // Initialize empty previous ID
+			NextID:      0, // Initialize empty next ID
 		}
-		s.log.Info("Created new session with CurrentID=0, ViewedCount=0, PreviousID=0")
+		s.log.Info("Created new session with CurrentID=0, ViewedCount=0, PreviousID=0, NextID=0")
 
 		// Save to cookie
 		sessionJSON, err := json.Marshal(session)
@@ -316,6 +322,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 						CurrentID:   0,
 						StartedAt:   time.Now().Unix(),
 						PreviousID:  0,
+						NextID:      0,
 					}
 				}
 			}
@@ -436,6 +443,19 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 			"newPreviousID":  session.PreviousID,
 		}).Info("Updating session")
 
+		// Pre-determine the next thumbnail for prefetch coordination
+		// Only do this if we don't already have a NextID or if this is a new session
+		if session.NextID == 0 || newSession {
+			nextThumbnail, err := s.db.GetRandomUnviewedThumbnail()
+			if err == nil && nextThumbnail != nil {
+				session.NextID = nextThumbnail.ID
+				s.log.WithFields(logrus.Fields{
+					"nextID":  session.NextID,
+					"context": "slideshow_display",
+				}).Info("Pre-determined next thumbnail for prefetch coordination")
+			}
+		}
+
 		// Save the updated session
 		sessionJSON, err := json.Marshal(session)
 		if err == nil {
@@ -552,11 +572,39 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get a random unviewed thumbnail instead of the next in sequence
-	nextThumbnail, err := s.db.GetRandomUnviewedThumbnail()
-	if err != nil {
-		s.log.WithError(err).Error("Failed to get next thumbnail")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
+	// But first check if we already have a NextID stored in session
+	var nextThumbnail *models.Thumbnail
+
+	if session.NextID > 0 {
+		// Use the pre-determined next thumbnail
+		nextThumbnail, err = s.db.GetByID(session.NextID)
+		if err != nil {
+			s.log.WithError(err).WithField("nextID", session.NextID).Error("Failed to get predetermined next thumbnail")
+			// Fall back to random
+			session.NextID = 0
+		} else if nextThumbnail != nil && nextThumbnail.IsViewed() {
+			// The predetermined thumbnail was already viewed, get a new one
+			s.log.WithField("nextID", session.NextID).Info("Predetermined next thumbnail was already viewed, getting new random")
+			session.NextID = 0
+			nextThumbnail = nil
+		} else if nextThumbnail != nil {
+			s.log.WithFields(logrus.Fields{
+				"nextID":        session.NextID,
+				"thumbnailPath": nextThumbnail.ThumbnailPath,
+				"movieFilename": nextThumbnail.MovieFilename,
+			}).Info("Using predetermined next thumbnail (coordinated with prefetcher)")
+		}
+	}
+
+	// If we don't have a valid predetermined thumbnail, get a random one
+	if nextThumbnail == nil {
+		s.log.Info("Getting random thumbnail (no predetermined NextID or it was invalid)")
+		nextThumbnail, err = s.db.GetRandomUnviewedThumbnail()
+		if err != nil {
+			s.log.WithError(err).Error("Failed to get next thumbnail")
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// If no next thumbnail, redirect to control page
@@ -572,6 +620,17 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 
 	// Update session with next thumbnail
 	session.CurrentID = nextThumbnail.ID
+
+	// Pre-determine the next thumbnail for coordination with prefetcher
+	session.NextID = 0 // Reset first
+	nextNextThumbnail, err := s.db.GetRandomUnviewedThumbnail()
+	if err == nil && nextNextThumbnail != nil {
+		session.NextID = nextNextThumbnail.ID
+		s.log.WithFields(logrus.Fields{
+			"currentID": session.CurrentID,
+			"nextID":    session.NextID,
+		}).Debug("Pre-determined next thumbnail for prefetch coordination")
+	}
 
 	// Save the updated session
 	sessionJSON, err := json.Marshal(session)
@@ -940,6 +999,86 @@ func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+}
+
+// handleSlideshowNextImage returns the next thumbnail image path without navigation
+func (s *Server) handleSlideshowNextImage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get session cookie to verify we have an active slideshow session
+	sessionCookie, err := r.Cookie("slideshow_session")
+	if err != nil {
+		// No session, return error
+		http.Error(w, "No slideshow session found", http.StatusBadRequest)
+		return
+	}
+
+	// Decode session to verify it's valid
+	sessionData, err := base64.StdEncoding.DecodeString(sessionCookie.Value)
+	if err != nil {
+		s.log.WithError(err).Error("Failed to decode session")
+		http.Error(w, "Invalid session", http.StatusBadRequest)
+		return
+	}
+
+	var session SessionData
+	if err := json.Unmarshal(sessionData, &session); err != nil {
+		s.log.WithError(err).Error("Failed to unmarshal session")
+		http.Error(w, "Invalid session", http.StatusBadRequest)
+		return
+	}
+
+	// Get next thumbnail using the pre-determined NextID from session
+	var nextThumbnail *models.Thumbnail
+	if session.NextID > 0 {
+		var err error
+		nextThumbnail, err = s.db.GetByID(session.NextID)
+		if err != nil {
+			s.log.WithError(err).WithField("nextID", session.NextID).Error("Failed to get predetermined next thumbnail for prefetch")
+			// Return empty response instead of error to not break the UI
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"hasNext": false,
+			})
+			return
+		}
+
+		// Double-check the thumbnail is still unviewed
+		if nextThumbnail != nil && nextThumbnail.IsViewed() {
+			s.log.WithField("nextID", session.NextID).Info("Predetermined next thumbnail was already viewed")
+			nextThumbnail = nil
+		} else if nextThumbnail != nil {
+			s.log.WithFields(logrus.Fields{
+				"nextID":        session.NextID,
+				"thumbnailPath": nextThumbnail.ThumbnailPath,
+				"movieFilename": nextThumbnail.MovieFilename,
+			}).Info("Using predetermined next thumbnail for prefetch")
+		}
+	} else {
+		s.log.WithField("sessionNextID", session.NextID).Info("No NextID in session, cannot prefetch")
+	}
+
+	if nextThumbnail == nil {
+		// No more thumbnails
+		s.log.Info("No next thumbnail available for prefetch")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"hasNext": false,
+		})
+		return
+	}
+
+	// Return the thumbnail path for prefetching
+	response := map[string]interface{}{
+		"hasNext":       true,
+		"thumbnailPath": nextThumbnail.ThumbnailPath,
+		"movieFilename": nextThumbnail.MovieFilename,
+	}
+
+	s.log.WithFields(logrus.Fields{
+		"thumbnailPath": nextThumbnail.ThumbnailPath,
+		"movieFilename": nextThumbnail.MovieFilename,
+	}).Debug("Providing next image for prefetch")
+
+	json.NewEncoder(w).Encode(response)
 }
 
 // handleNotFound handles 404 errors
