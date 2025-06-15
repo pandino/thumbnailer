@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function setupKeyboardShortcuts() {
     document.addEventListener('keydown', function(e) {
         // Prevent default behavior for navigation keys
-        if ([' ', 'ArrowRight', 'ArrowLeft', 'd', 'D', 'Escape', 'r', 'R'].includes(e.key)) {
+        if ([' ', 'ArrowRight', 'ArrowLeft', 'd', 'D', 'Escape'].includes(e.key)) {
             e.preventDefault();
             
             // Handle different keys
@@ -39,12 +39,6 @@ function setupKeyboardShortcuts() {
                 case 'D':
                     // Delete thumbnail (without confirmation)
                     deleteMovie();
-                    break;
-                
-                case 'r':
-                case 'R':
-                    // Reset history
-                    resetHistory();
                     break;
                 
                 case 'Escape':
@@ -78,16 +72,6 @@ function navigateToPrevious() {
     if (prevButton && !prevButton.classList.contains('disabled')) {
         prevButton.click();
         // Preload the next image after navigation
-        setTimeout(preloadNextImage, 1000);
-    }
-}
-
-// Reset history
-function resetHistory() {
-    const resetButton = document.querySelector('.nav-button.reset-history');
-    if (resetButton) {
-        resetButton.click();
-        // Preload the next image after reset
         setTimeout(preloadNextImage, 1000);
     }
 }

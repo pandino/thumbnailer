@@ -3,3 +3,7 @@ movie-thumbnailer
 movies/
 thumbnails/
 data/
+cookies.txt
+ISSUES.md
+runlocal.sh
+test_*.sh
