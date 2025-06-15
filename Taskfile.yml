@@ -20,7 +20,7 @@ tasks:
   build:
     desc: Build the container image with embedded version information
     vars:
-      TAG_ARGS: --tag {{.IMAGE_NAME}}:{{.VERSION}} --tag {{.IMAGE_NAME}}:latest --tag {{.APP_NAME}}:{{.VERSION}} --tag {{.APP_NAME}}:latest
+      TAG_ARGS: --tag {{.IMAGE_NAME}}:{{.VERSION}} --tag {{.IMAGE_NAME}}:latest --tag {{.IMAGE_NAME}}:debug --tag {{.APP_NAME}}:{{.VERSION}} --tag {{.APP_NAME}}:latest
     cmds:
       - echo "Building container with version {{.VERSION}}, commit {{.COMMIT}}"
       - podman build {{.BUILD_ARGS}} {{.TAG_ARGS}} .
@@ -64,5 +64,6 @@ tasks:
             echo "On main branch, publishing latest image"
             podman push {{.IMAGE_NAME}}:latest
           else
-            echo "Skipping publish: not a clean tagged commit or on main branch"
+            echo "Publish developer image only"
+            podman push {{.IMAGE_NAME}}:debug
           fi

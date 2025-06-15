@@ -215,6 +215,12 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 	thumbnailFilename := strings.TrimSuffix(movieFilename, filepath.Ext(movieFilename)) + ".jpg"
 	thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, thumbnailFilename)
 
+	// Get file size
+	var fileSize int64
+	if fileInfo, err := os.Stat(moviePath); err == nil {
+		fileSize = fileInfo.Size()
+	}
+
 	// Initialize a thumbnail record - will be either inserted or updated
 	thumbnail := &models.Thumbnail{
 		MoviePath:     movieFilename,
@@ -222,6 +228,7 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 		ThumbnailPath: thumbnailFilename,
 		Status:        models.StatusPending,
 		Source:        models.SourceGenerated, // Default source
+		FileSize:      fileSize,
 	}
 
 	// Check if thumbnail file already exists on disk
@@ -248,6 +255,10 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 		thumbnail.ID = existingThumbnail.ID
 		thumbnail.CreatedAt = existingThumbnail.CreatedAt
 		thumbnail.Viewed = existingThumbnail.Viewed
+		// Preserve FileSize if it was already set and we couldn't get it this time
+		if thumbnail.FileSize == 0 && existingThumbnail.FileSize > 0 {
+			thumbnail.FileSize = existingThumbnail.FileSize
+		}
 		// Only preserve source if it's already set to imported
 		if existingThumbnail.Source == models.SourceImported {
 			thumbnail.Source = models.SourceImported

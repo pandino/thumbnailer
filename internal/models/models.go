@@ -18,6 +18,7 @@ type Thumbnail struct {
 	Width         int       `json:"width"`
 	Height        int       `json:"height"`
 	Duration      float64   `json:"duration"`
+	FileSize      int64     `json:"file_size"`
 	ErrorMessage  string    `json:"error_message,omitempty"`
 	Source        string    `json:"source"`
 }
@@ -124,4 +125,29 @@ func (t *Thumbnail) GetDurationFormatted() string {
 // GetResolution returns the video resolution as a string
 func (t *Thumbnail) GetResolution() string {
 	return fmt.Sprintf("%dx%d", t.Width, t.Height)
+}
+
+// GetFileSizeFormatted returns the file size in a human-readable format
+func (t *Thumbnail) GetFileSizeFormatted() string {
+	const (
+		B  = 1
+		KB = 1024 * B
+		MB = 1024 * KB
+		GB = 1024 * MB
+		TB = 1024 * GB
+	)
+
+	size := float64(t.FileSize)
+	switch {
+	case t.FileSize >= TB:
+		return fmt.Sprintf("%.2f TB", size/TB)
+	case t.FileSize >= GB:
+		return fmt.Sprintf("%.2f GB", size/GB)
+	case t.FileSize >= MB:
+		return fmt.Sprintf("%.2f MB", size/MB)
+	case t.FileSize >= KB:
+		return fmt.Sprintf("%.2f KB", size/KB)
+	default:
+		return fmt.Sprintf("%d B", t.FileSize)
+	}
 }

@@ -86,6 +86,7 @@ function renderThumbnails(container, thumbnails) {
                         <div class="thumbnail-title">${thumbnail.movie_filename}</div>
                         <div class="thumbnail-meta">
                             <span>${formatDuration(thumbnail.duration)}</span>
+                            <span>${formatFileSize(thumbnail.file_size || 0)}</span>
                             <span>${formatDate(thumbnail.updated_at)}</span>
                         </div>
                     </div>
@@ -102,6 +103,7 @@ function renderThumbnails(container, thumbnails) {
                         <div class="thumbnail-title">${thumbnail.movie_filename}</div>
                         <div class="thumbnail-meta">
                             <span>${formatDuration(thumbnail.duration)}</span>
+                            <span>${formatFileSize(thumbnail.file_size || 0)}</span>
                             <span>${formatDate(thumbnail.created_at)}</span>
                             ${thumbnail.source ? `<span class="source-label">${thumbnail.source}</span>` : ''}
                         </div>
@@ -186,6 +188,17 @@ function formatDuration(seconds) {
 // Add leading zero to numbers less than 10
 function padZero(num) {
     return num < 10 ? `0${num}` : num;
+}
+
+// Format file size from bytes to human readable format
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 // Format date to relative time (e.g., "2 days ago")

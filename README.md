@@ -8,6 +8,7 @@ A Go application for generating and managing thumbnail mosaics from movie files.
 - Runs scheduled background scans for new movie files
 - Maintains a SQLite database to track relationships
 - Provides a web interface for browsing and managing thumbnails
+- Tracks movie metadata including duration, resolution, and file size
 - Runs as a containerized application with minimal dependencies
 - Supports importing existing thumbnails without regenerating them
 
@@ -98,6 +99,7 @@ CREATE TABLE thumbnails (
     width INTEGER DEFAULT 0,
     height INTEGER DEFAULT 0,
     duration REAL DEFAULT 0,
+    file_size INTEGER DEFAULT 0,
     error_message TEXT NOT NULL DEFAULT '',
     source TEXT DEFAULT 'generated'
 );
@@ -107,6 +109,7 @@ Key fields:
 - `status`: Current processing status ('pending', 'success', 'error', 'deleted')
 - `viewed`: Whether the thumbnail has been viewed by the user (0 or 1)
 - `source`: How the thumbnail was created ('generated' or 'imported')
+- `file_size`: Size of the movie file in bytes
 
 ## Web Interface
 

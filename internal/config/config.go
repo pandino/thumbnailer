@@ -64,8 +64,12 @@ func New() *Config {
 		ImportExisting: getEnvAsBool("IMPORT_EXISTING", false),
 	}
 
-	// Derive DB path
-	config.DBPath = filepath.Join(config.DataDir, "thumbnailer.db")
+	// Derive DB path - check DATABASE_PATH first, then default
+	if dbPath := getEnv("DATABASE_PATH", ""); dbPath != "" {
+		config.DBPath = dbPath
+	} else {
+		config.DBPath = filepath.Join(config.DataDir, "thumbnailer.db")
+	}
 
 	return config
 }
