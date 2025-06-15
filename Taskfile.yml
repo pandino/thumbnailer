@@ -30,6 +30,22 @@ tasks:
     cmds:
       - podman run --rm -v "$(pwd):/app" -w /app golang:1.24-alpine sh -c "go test -v ./..."
 
+  gobuild:
+    desc: Build the Go executable locally
+    cmds:
+      - echo "Building movie-thumbnailer executable with version {{.VERSION}}"
+      - go build -ldflags "-X main.version={{.VERSION}} -X main.commit={{.COMMIT}}" -o movie-thumbnailer ./cmd/movie-thumbnailer
+      - echo "Built movie-thumbnailer executable successfully"
+
+  clean:
+    desc: Clean build artifacts and temporary files
+    cmds:
+      - echo "Cleaning build artifacts..."
+      - rm -f movie-thumbnailer
+      - go clean -cache
+      - go clean -testcache
+      - echo "Clean completed successfully"
+
   version:
     desc: Display the current version information
     cmds:
