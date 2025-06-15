@@ -8,9 +8,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Set focus to the page for keyboard shortcuts
     document.body.focus();
-    
-    // Set up history timeline animation
-    animateHistoryTimeline();
 });
 
 // Setup keyboard shortcuts for slideshow navigation
@@ -114,19 +111,6 @@ function setupAjaxForms() {
             return false;
         });
     }
-}
-
-// Animate history timeline dots
-function animateHistoryTimeline() {
-    const dots = document.querySelectorAll('.history-dot');
-    dots.forEach((dot, index) => {
-        setTimeout(() => {
-            dot.style.opacity = '0';
-            setTimeout(() => {
-                dot.style.opacity = '1';
-            }, 200);
-        }, index * 100);
-    });
 }
 
 // Submit form via AJAX

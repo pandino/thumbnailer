@@ -58,28 +58,12 @@
             </div>
         </div>
 
-        <!-- History Timeline -->
-        <div class="history-timeline">
-            <!-- Previous thumbnail (single undo) -->
-            {{if .HasPrevious}}
-                <div class="history-dot available" title="Previous thumbnail available"></div>
-            {{else}}
-                <div class="history-dot" title="No history available"></div>
-            {{end}}
-            
-            <!-- Current thumbnail -->
-            <div class="history-dot current" title="Current thumbnail"></div>
-        </div>
-
         <div class="slideshow-nav">
             <a href="/slideshow/previous?current={{.Thumbnail.ID}}" 
             class="nav-button prev{{if eq .BackCount 0}} disabled{{end}}"
             {{if eq .BackCount 0}}onclick="return false;"{{end}}
             title="Go to previous thumbnail">
                 Previous
-                {{if gt .BackCount 0}}
-                <span class="back-counter">1</span>
-                {{end}}
             </a>
             
 
@@ -99,7 +83,7 @@
                 <span class="shortcut-group">
                     <span class="shortcut">←</span>: 
                     {{if gt .BackCount 0}}
-                    <span class="shortcut-value">Previous (1)</span>
+                    <span class="shortcut-value">Previous</span>
                     {{else}}
                     <span class="shortcut-disabled">Previous (No history)</span>
                     {{end}}
