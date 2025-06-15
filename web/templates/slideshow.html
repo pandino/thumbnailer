@@ -18,13 +18,6 @@
                 {{end}}
             </div>
             <div class="slideshow-actions">
-                <form action="/slideshow/mark-viewed" method="post" id="mark-viewed-form">
-                    <input type="hidden" name="path" value="{{.Thumbnail.ThumbnailPath}}">
-                    <input type="hidden" name="id" value="{{.Thumbnail.ID}}">
-                    <button type="submit" class="action-icon-button" title="Mark as viewed" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
-                        <span class="action-icon">👁️</span>
-                    </button>
-                </form>
                 <form action="/slideshow/delete" method="post" id="delete-form">
                     <input type="hidden" name="path" value="{{.Thumbnail.MoviePath}}">
                     <button type="submit" class="action-icon-button danger" title="Delete movie" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
@@ -95,8 +88,8 @@
             </a>
             {{end}}
             
-            <a href="/slideshow/next?current={{.Thumbnail.ID}}" class="nav-button next" title="Go to next random thumbnail">
-                Next Random
+            <a href="/slideshow/next?current={{.Thumbnail.ID}}" class="nav-button next" title="Mark as viewed and go to next random thumbnail">
+                Next (Mark as Viewed)
             </a>
         </div>
 
@@ -104,7 +97,7 @@
             <p>
                 <span class="shortcut-group">
                     <span class="shortcut">→</span> or <span class="shortcut">Space</span>: 
-                    <span class="shortcut-value">Next Random</span>
+                    <span class="shortcut-value">Next Random (Mark as Viewed)</span>
                 </span>
                 
                 <span class="shortcut-group">
@@ -114,11 +107,6 @@
                     {{else}}
                     <span class="shortcut-disabled">Previous (No history)</span>
                     {{end}}
-                </span>
-                
-                <span class="shortcut-group">
-                    <span class="shortcut">M</span>: 
-                    <span class="shortcut-value">Mark as viewed</span>
                 </span>
                 
                 <span class="shortcut-group">

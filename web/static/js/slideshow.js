@@ -17,14 +17,14 @@ document.addEventListener('DOMContentLoaded', function() {
 function setupKeyboardShortcuts() {
     document.addEventListener('keydown', function(e) {
         // Prevent default behavior for navigation keys
-        if ([' ', 'ArrowRight', 'ArrowLeft', 'm', 'M', 'd', 'D', 'Escape', 'r', 'R'].includes(e.key)) {
+        if ([' ', 'ArrowRight', 'ArrowLeft', 'd', 'D', 'Escape', 'r', 'R'].includes(e.key)) {
             e.preventDefault();
             
             // Handle different keys
             switch (e.key) {
                 case ' ':
                 case 'ArrowRight':
-                    // Next thumbnail
+                    // Next thumbnail (now marks as viewed)
                     navigateToNext();
                     break;
                 
@@ -33,12 +33,6 @@ function setupKeyboardShortcuts() {
                     if (!isPreviousDisabled()) {
                         navigateToPrevious();
                     }
-                    break;
-                
-                case 'm':
-                case 'M':
-                    // Mark as viewed
-                    markAsViewed();
                     break;
                 
                 case 'd':
@@ -92,17 +86,6 @@ function resetHistory() {
     }
 }
 
-// Mark current thumbnail as viewed
-function markAsViewed() {
-    const form = document.getElementById('mark-viewed-form');
-    if (form) {
-        submitFormAjax(form, function() {
-            // Navigate to next after marking as viewed
-            navigateToNext();
-        });
-    }
-}
-
 // Delete movie without confirmation
 function deleteMovie() {
     const form = document.getElementById('delete-form');
@@ -121,38 +104,6 @@ function deleteMovie() {
 
 // Setup form AJAX submissions
 function setupAjaxForms() {
-    // Mark as viewed form
-    const viewForm = document.getElementById('mark-viewed-form');
-    if (viewForm) {
-        viewForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            submitFormAjax(this, function() {
-                // Update session display counter before navigating to next
-                const counterEl = document.querySelector('.slideshow-counter');
-                if (counterEl) {
-                    const counterText = counterEl.textContent;
-                    const match = counterText.match(/Thumbnail (\d+) of (\d+)/);
-                    if (match && match.length >= 3) {
-                        const current = parseInt(match[1]);
-                        const total = parseInt(match[2]);
-                        counterEl.textContent = `Thumbnail ${current + 1} of ${total}`;
-                        
-                        // Make sure we keep the random indicator
-                        if (!counterEl.querySelector('.random-indicator')) {
-                            const randomIndicator = document.createElement('span');
-                            randomIndicator.className = 'random-indicator';
-                            randomIndicator.textContent = 'Random Order';
-                            counterEl.appendChild(randomIndicator);
-                        }
-                    }
-                }
-                
-                // Navigate to next after marking as viewed
-                navigateToNext();
-            });
-        });
-    }
-    
     // Delete form - no confirmation
     const deleteForm = document.getElementById('delete-form');
     if (deleteForm) {
