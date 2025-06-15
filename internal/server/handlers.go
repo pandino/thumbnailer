@@ -16,11 +16,11 @@ import (
 )
 
 type SessionData struct {
-	TotalImages int     `json:"total_images"`
-	ViewedCount int     `json:"viewed_count"`
-	CurrentID   int64   `json:"current_id"`
-	StartedAt   int64   `json:"started_at"`
-	History     []int64 `json:"history"` // Store previous thumbnail IDs (limited to 2)
+	TotalImages int   `json:"total_images"`
+	ViewedCount int   `json:"viewed_count"`
+	CurrentID   int64 `json:"current_id"`
+	StartedAt   int64 `json:"started_at"`
+	PreviousID  int64 `json:"previous_id"` // Store previous thumbnail ID for single undo
 }
 
 // handleControlPage renders the control page
@@ -202,14 +202,14 @@ func (s *Server) handleResetHistory(w http.ResponseWriter, r *http.Request) {
 					ViewedCount: 0,
 					CurrentID:   0,
 					StartedAt:   time.Now().Unix(),
-					History:     []int64{},
+					PreviousID:  0,
 				}
 			}
 		}
 	}
 
-	// Reset the history array but keep other session data
-	session.History = []int64{}
+	// Reset the previous ID but keep other session data
+	session.PreviousID = 0
 
 	// Save the updated session
 	sessionJSON, err := json.Marshal(session)
@@ -277,7 +277,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 			ViewedCount: 0,
 			CurrentID:   0,
 			StartedAt:   time.Now().Unix(),
-			History:     []int64{}, // Initialize empty history
+			PreviousID:  0, // Initialize empty previous ID
 		}
 
 		// Save to cookie
@@ -303,8 +303,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 			if err == nil {
 				err = json.Unmarshal(jsonData, &session)
 				if err != nil {
-					s.log.WithError(err).Error("Failed to unmarshal session data")
-					// Initialize new session as fallback
+					s.log.WithError(err).Error("Failed to unmarshal session data") // Initialize new session as fallback
 					stats, err := s.scanner.GetStats()
 					if err != nil {
 						stats = &models.Stats{}
@@ -314,7 +313,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 						ViewedCount: 0,
 						CurrentID:   0,
 						StartedAt:   time.Now().Unix(),
-						History:     []int64{},
+						PreviousID:  0,
 					}
 				}
 			}
@@ -324,13 +323,12 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				stats = &models.Stats{}
 			}
-
 			session = SessionData{
 				TotalImages: stats.Unviewed,
 				ViewedCount: 0,
 				CurrentID:   0,
 				StartedAt:   time.Now().Unix(),
-				History:     []int64{},
+				PreviousID:  0,
 			}
 
 			// Save to cookie
@@ -391,18 +389,13 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 
 	// Update session with current thumbnail if it's changed
 	if thumbnail.ID != session.CurrentID {
-		// If it's a new thumbnail, push the previous to history stack and increment the viewed count
+		// If it's a new thumbnail, store the previous ID for single undo and increment the viewed count
 		if session.CurrentID > 0 && thumbnail.ID != session.CurrentID {
 			session.ViewedCount++
 
-			// Only store the previous ID in history if it's not already in history
-			// and it's a valid ID (not 0)
-			if session.CurrentID > 0 && !contains(session.History, session.CurrentID) {
-				// Add current to history, limit to 2 items
-				session.History = append([]int64{session.CurrentID}, session.History...)
-				if len(session.History) > 2 {
-					session.History = session.History[:2]
-				}
+			// Store the current ID as previous (single undo)
+			if session.CurrentID > 0 {
+				session.PreviousID = session.CurrentID
 			}
 		}
 		session.CurrentID = thumbnail.ID
@@ -423,13 +416,13 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 	// Calculate current position in this session
 	position := session.ViewedCount + 1
 
-	// Count how many valid back steps we have
+	// Check if we have a valid previous thumbnail for undo
 	backCount := 0
-	for _, id := range session.History {
-		// Check if the thumbnail exists and is not deleted
-		historyThumb, err := s.db.GetByID(id)
-		if err == nil && historyThumb != nil && historyThumb.Status != models.StatusDeleted {
-			backCount++
+	if session.PreviousID > 0 {
+		// Check if the previous thumbnail exists and is not deleted
+		prevThumb, err := s.db.GetByID(session.PreviousID)
+		if err == nil && prevThumb != nil && prevThumb.Status != models.StatusDeleted {
+			backCount = 1
 		}
 	}
 
@@ -443,17 +436,17 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 
 	// Render template with data
 	data := struct {
-		Thumbnail *models.Thumbnail
-		Total     int
-		Current   int
-		BackCount int
-		History   []int64
+		Thumbnail   *models.Thumbnail
+		Total       int
+		Current     int
+		BackCount   int
+		HasPrevious bool
 	}{
-		Thumbnail: thumbnail,
-		Total:     session.TotalImages,
-		Current:   position,
-		BackCount: backCount,
-		History:   session.History,
+		Thumbnail:   thumbnail,
+		Total:       session.TotalImages,
+		Current:     position,
+		BackCount:   backCount,
+		HasPrevious: session.PreviousID > 0,
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
@@ -461,16 +454,6 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-}
-
-// Helper function to check if a slice contains a value
-func contains(slice []int64, value int64) bool {
-	for _, item := range slice {
-		if item == value {
-			return true
-		}
-	}
-	return false
 }
 
 // handleSlideshowNext shows the next thumbnail in the slideshow
@@ -504,7 +487,7 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 					ViewedCount: 0,
 					CurrentID:   0,
 					StartedAt:   time.Now().Unix(),
-					History:     []int64{},
+					PreviousID:  0,
 				}
 			}
 		}
@@ -524,13 +507,8 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 			if currentID == session.CurrentID {
 				session.ViewedCount++
 
-				// Add current to history, limit to 2 items
-				if !contains(session.History, currentID) {
-					session.History = append([]int64{currentID}, session.History...)
-					if len(session.History) > 2 {
-						session.History = session.History[:2]
-					}
-				}
+				// Store current ID as previous for single undo
+				session.PreviousID = currentID
 			}
 		}
 	}
@@ -604,35 +582,30 @@ func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request)
 					ViewedCount: 0,
 					CurrentID:   0,
 					StartedAt:   time.Now().Unix(),
-					History:     []int64{},
+					PreviousID:  0,
 				}
 			}
 		}
 	}
 
-	// Check if we have history
-	if len(session.History) == 0 {
-		// No history, redirect back to current
+	// Check if we have a previous thumbnail
+	if session.PreviousID == 0 {
+		// No previous thumbnail, redirect back to current
 		http.Redirect(w, r, fmt.Sprintf("/slideshow?id=%d", currentID), http.StatusSeeOther)
 		return
 	}
 
-	// Get the previous ID from history
+	// Get the previous ID and check if it's valid
 	var prevID int64 = 0
 	var validPrevFound bool = false
-	var newHistory []int64
 
-	// Iterate through history to find first valid thumbnail
-	for i, id := range session.History {
+	// With single undo, we only check the previous ID
+	if session.PreviousID > 0 {
 		// Check if this thumbnail still exists and is not deleted
-		prevThumbnail, err := s.db.GetByID(id)
+		prevThumbnail, err := s.db.GetByID(session.PreviousID)
 		if err == nil && prevThumbnail != nil && prevThumbnail.Status != models.StatusDeleted {
-			prevID = id
+			prevID = session.PreviousID
 			validPrevFound = true
-
-			// The new history should exclude the current one we're navigating to
-			newHistory = session.History[i+1:]
-			break
 		}
 	}
 
@@ -644,7 +617,7 @@ func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request)
 
 	// Update session with previous thumbnail ID
 	session.CurrentID = prevID
-	session.History = newHistory // Update history to exclude the one we just went back to
+	session.PreviousID = 0 // Clear previous ID after going back (single undo consumed)
 
 	// Save the updated session
 	sessionJSON, err := json.Marshal(session)

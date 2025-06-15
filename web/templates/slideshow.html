@@ -67,16 +67,10 @@
 
         <!-- History Timeline -->
         <div class="history-timeline">
-            <!-- Previous thumbnails (max 2) -->
-            {{range .History}}
+            <!-- Previous thumbnail (single undo) -->
+            {{if .HasPrevious}}
                 <div class="history-dot available" title="Previous thumbnail available"></div>
             {{else}}
-                <div class="history-dot" title="No history available"></div>
-                <div class="history-dot" title="No history available"></div>
-            {{end}}
-            
-            <!-- Fill in empty slots if needed -->
-            {{if eq (len .History) 1}}
                 <div class="history-dot" title="No history available"></div>
             {{end}}
             
@@ -91,11 +85,11 @@
             title="Go to previous thumbnail">
                 Previous
                 {{if gt .BackCount 0}}
-                <span class="back-counter">{{.BackCount}}</span>
+                <span class="back-counter">1</span>
                 {{end}}
             </a>
             
-            {{if gt (len .History) 0}}
+            {{if .HasPrevious}}
             <a href="/slideshow/reset-history" class="nav-button reset-history" title="Reset history and start a new random sequence">
                 Reset History
             </a>
@@ -116,7 +110,7 @@
                 <span class="shortcut-group">
                     <span class="shortcut">←</span>: 
                     {{if gt .BackCount 0}}
-                    <span class="shortcut-value">Previous ({{.BackCount}})</span>
+                    <span class="shortcut-value">Previous (1)</span>
                     {{else}}
                     <span class="shortcut-disabled">Previous (No history)</span>
                     {{end}}
@@ -137,7 +131,7 @@
                     <span class="shortcut-value">Back to control</span>
                 </span>
                 
-                {{if gt (len .History) 0}}
+                {{if .HasPrevious}}
                 <span class="shortcut-group">
                     <span class="shortcut">R</span>: 
                     <span class="shortcut-value">Reset History</span>
