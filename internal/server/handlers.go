@@ -480,8 +480,11 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Mark current thumbnail as viewed
-	if currentID > 0 {
+	// Check if this is a skip operation (don't mark as viewed)
+	skipViewing := r.URL.Query().Get("skip") == "true"
+
+	// Mark current thumbnail as viewed (unless skipping)
+	if currentID > 0 && !skipViewing {
 		thumbnail, err := s.db.GetByID(currentID)
 		if err == nil && thumbnail != nil && thumbnail.Status != models.StatusDeleted {
 			err = s.db.MarkAsViewed(thumbnail.ThumbnailPath)
@@ -498,6 +501,9 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 				session.PreviousID = currentID
 			}
 		}
+	} else if currentID > 0 && skipViewing {
+		// For skip operation, just update the session to track the current ID as previous for navigation
+		session.PreviousID = currentID
 	}
 
 	// Get a random unviewed thumbnail instead of the next in sequence

@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function setupKeyboardShortcuts() {
     document.addEventListener('keydown', function(e) {
         // Prevent default behavior for navigation keys
-        if ([' ', 'ArrowRight', 'ArrowLeft', 'd', 'D', 'Escape'].includes(e.key)) {
+        if ([' ', 'ArrowRight', 'ArrowLeft', 'd', 'D', 'Escape', 's', 'S'].includes(e.key)) {
             e.preventDefault();
             
             // Handle different keys
@@ -36,6 +36,12 @@ function setupKeyboardShortcuts() {
                 case 'D':
                     // Delete thumbnail (without confirmation)
                     deleteMovie();
+                    break;
+                
+                case 's':
+                case 'S':
+                    // Skip to next thumbnail without marking as viewed
+                    skipToNext();
                     break;
                 
                 case 'Escape':
@@ -71,6 +77,28 @@ function navigateToPrevious() {
         // Preload the next image after navigation
         setTimeout(preloadNextImage, 1000);
     }
+}
+
+// Skip to next thumbnail without marking as viewed
+function skipToNext() {
+    // Get current thumbnail ID
+    const currentThumbnailId = getCurrentThumbnailId();
+    if (currentThumbnailId) {
+        window.location.href = `/slideshow/next?current=${currentThumbnailId}&skip=true`;
+        // Preload the next image after navigation
+        setTimeout(preloadNextImage, 1000);
+    }
+}
+
+// Get current thumbnail ID from the page
+function getCurrentThumbnailId() {
+    // Look for the current thumbnail ID in the page - we can get it from the next button href
+    const nextButton = document.querySelector('.nav-button.next');
+    if (nextButton && nextButton.href) {
+        const url = new URL(nextButton.href);
+        return url.searchParams.get('current');
+    }
+    return null;
 }
 
 // Delete movie without confirmation
