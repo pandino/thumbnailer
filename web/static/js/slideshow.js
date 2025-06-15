@@ -170,24 +170,15 @@ function submitFormAjax(form, callback) {
 
 // Preload next image for smoother navigation
 function preloadNextImage() {
-    const nextLink = document.querySelector('.nav-button.next');
-    if (nextLink) {
-        fetch(nextLink.href)
-            .then(response => response.text())
-            .then(html => {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
-                const nextImageSrc = doc.querySelector('.thumbnail-image')?.src;
-                
-                if (nextImageSrc) {
-                    const preloadImage = new Image();
-                    preloadImage.src = nextImageSrc;
-                }
-            })
-            .catch(error => {
-                console.error('Error preloading next image:', error);
-            });
-    }
+    // Note: This function is currently disabled because it was causing
+    // unintended navigation by making actual requests to the slideshow endpoint.
+    // TODO: Implement proper image preloading without triggering navigation
+    
+    // const nextLink = document.querySelector('.nav-button.next');
+    // if (nextLink) {
+    //     // This was making actual requests to /slideshow/next which triggered navigation!
+    //     // We need a different approach to preload images
+    // }
 }
 
 // Call preload function when page loads

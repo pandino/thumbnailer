@@ -257,6 +257,7 @@ func (s *Server) handleResetHistory(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 	// Check if a new session was requested
 	newSession := r.URL.Query().Get("new") == "true"
+	s.log.WithField("newSession", newSession).WithField("url", r.URL.String()).Info("Slideshow request received")
 
 	// Initialize session data
 	var session SessionData
@@ -279,6 +280,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 			StartedAt:   time.Now().Unix(),
 			PreviousID:  0, // Initialize empty previous ID
 		}
+		s.log.Info("Created new session with CurrentID=0, ViewedCount=0, PreviousID=0")
 
 		// Save to cookie
 		sessionJSON, err := json.Marshal(session)
@@ -347,10 +349,12 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 
 	// Check if an ID is specified in the query string for a specific thumbnail
 	idParam := r.URL.Query().Get("id")
-	var currentID int64 = session.CurrentID
+	var targetID int64 = session.CurrentID // Use session's current ID as default
+
 	if idParam != "" {
+		// Override with specific ID from query parameter
 		var err error
-		currentID, err = strconv.ParseInt(idParam, 10, 64)
+		targetID, err = strconv.ParseInt(idParam, 10, 64)
 		if err != nil {
 			s.log.WithError(err).Error("Invalid ID parameter")
 			http.Error(w, "Invalid ID parameter", http.StatusBadRequest)
@@ -362,11 +366,20 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 	var thumbnail *models.Thumbnail
 	var err error
 
-	if currentID > 0 {
-		// Get the specified thumbnail
-		thumbnail, err = s.db.GetByID(currentID)
+	if targetID > 0 {
+		// Get the specified thumbnail (either from session or query parameter)
+		s.log.WithField("targetID", targetID).Info("Attempting to get thumbnail by ID")
+		thumbnail, err = s.db.GetByID(targetID)
+		if err != nil || thumbnail == nil {
+			// If the stored thumbnail doesn't exist anymore, get a new random one
+			s.log.WithError(err).WithField("targetID", targetID).Warn("Stored thumbnail not found, getting new random thumbnail")
+			thumbnail, err = s.db.GetRandomUnviewedThumbnail()
+		} else {
+			s.log.WithField("foundThumbnailID", thumbnail.ID).Info("Successfully found thumbnail by ID")
+		}
 	} else {
-		// Get a random unviewed thumbnail instead of the first one
+		// No current thumbnail in session, get a random unviewed thumbnail
+		s.log.Info("No targetID, getting random unviewed thumbnail")
 		thumbnail, err = s.db.GetRandomUnviewedThumbnail()
 	}
 
@@ -387,18 +400,41 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update session with current thumbnail if it's changed
-	if thumbnail.ID != session.CurrentID {
-		// If it's a new thumbnail, store the previous ID for single undo and increment the viewed count
-		if session.CurrentID > 0 && thumbnail.ID != session.CurrentID {
-			session.ViewedCount++
+	// Update session with current thumbnail
+	s.log.WithFields(map[string]interface{}{
+		"thumbnailID":        thumbnail.ID,
+		"sessionCurrentID":   session.CurrentID,
+		"sessionViewedCount": session.ViewedCount,
+		"sessionPreviousID":  session.PreviousID,
+		"newSession":         newSession,
+	}).Info("Before session update check")
 
-			// Store the current ID as previous (single undo)
-			if session.CurrentID > 0 {
-				session.PreviousID = session.CurrentID
-			}
+	shouldUpdateSession := false
+	if newSession {
+		// For new sessions, always set the first thumbnail without incrementing counters
+		if session.CurrentID == 0 {
+			s.log.Info("New session: setting first thumbnail without incrementing counters")
+			session.CurrentID = thumbnail.ID
+			shouldUpdateSession = true
+		}
+	} else if thumbnail.ID != session.CurrentID {
+		// For existing sessions, only update if we're viewing a different thumbnail
+		s.log.Info("Existing session: viewing different thumbnail, updating with navigation logic")
+		if session.CurrentID > 0 {
+			// This is actual navigation between thumbnails
+			session.ViewedCount++
+			session.PreviousID = session.CurrentID
 		}
 		session.CurrentID = thumbnail.ID
+		shouldUpdateSession = true
+	}
+
+	if shouldUpdateSession {
+		s.log.WithFields(map[string]interface{}{
+			"newCurrentID":   session.CurrentID,
+			"newViewedCount": session.ViewedCount,
+			"newPreviousID":  session.PreviousID,
+		}).Info("Updating session")
 
 		// Save the updated session
 		sessionJSON, err := json.Marshal(session)
@@ -411,6 +447,8 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 				HttpOnly: true,
 			})
 		}
+	} else {
+		s.log.Info("No session update needed")
 	}
 
 	// Calculate current position in this session
