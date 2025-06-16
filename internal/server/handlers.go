@@ -297,9 +297,9 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		var err error
 		targetID, err = strconv.ParseInt(idParam, 10, 64)
 		if err != nil {
-			s.log.WithError(err).Error("Invalid ID parameter")
-			http.Error(w, "Invalid ID parameter", http.StatusBadRequest)
-			return
+			s.log.WithError(err).WithField("idParam", idParam).Warn("Invalid ID parameter, ignoring and using session ID")
+			// Don't return error, just use session's current ID instead
+			targetID = session.CurrentID
 		}
 	}
 
@@ -361,8 +361,8 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 	} else if thumbnail.ID != session.CurrentID {
 		// For existing sessions, only update if we're viewing a different thumbnail
 		s.log.Info("Existing session: viewing different thumbnail, updating with navigation logic")
-		if session.CurrentID > 0 {
-			// This is actual navigation between thumbnails
+		if session.CurrentID > 0 && !session.PendingDelete {
+			// This is actual navigation between thumbnails (not just returning from delete)
 			session.ViewedCount++
 			session.PreviousID = session.CurrentID
 		}
@@ -415,7 +415,20 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		prevThumb, err := s.db.GetByID(session.PreviousID)
 		if err == nil && prevThumb != nil && prevThumb.Status != models.StatusDeleted {
 			backCount = 1
+			s.log.WithFields(logrus.Fields{
+				"previousID": session.PreviousID,
+				"backCount":  backCount,
+			}).Info("Setting backCount to 1")
+		} else {
+			s.log.WithFields(logrus.Fields{
+				"previousID":   session.PreviousID,
+				"prevThumb":    prevThumb,
+				"error":        err,
+				"prevThumbNil": prevThumb == nil,
+			}).Info("Previous thumbnail invalid, backCount remains 0")
 		}
+	} else {
+		s.log.WithField("sessionPreviousID", session.PreviousID).Info("No PreviousID set, backCount remains 0")
 	}
 
 	// Parse template
@@ -567,6 +580,8 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 		if err == nil && thumbnail != nil && thumbnail.Status != models.StatusDeleted {
 			// Store current ID as previous for single undo (viewing will be deferred)
 			session.PreviousID = currentID
+			// Increment viewed count for navigation
+			session.ViewedCount++
 		}
 	} else if currentID > 0 && skipViewing {
 		// For skip operation, just update the session to track the current ID as previous for navigation
@@ -883,8 +898,8 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Otherwise redirect to next
-	http.Redirect(w, r, fmt.Sprintf("/slideshow/next?current=%d", thumbnail.ID), http.StatusSeeOther)
+	// Otherwise redirect back to the same slide to show pending deletion state
+	http.Redirect(w, r, fmt.Sprintf("/slideshow?id=%d", thumbnail.ID), http.StatusSeeOther)
 }
 
 // handleUndoDelete restores a movie that was marked for deletion

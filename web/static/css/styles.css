@@ -756,6 +756,26 @@ footer {
     background-color: #95a5a6;
 }
 
+.nav-button.undo.delete-undo {
+    background-color: #e74c3c;
+    border: 2px solid #c0392b;
+}
+
+.nav-button.undo.delete-undo:hover {
+    background-color: #c0392b;
+    border-color: #a93226;
+}
+
+.nav-button.undo.navigation-undo {
+    background-color: #f39c12;
+    border: 2px solid #e67e22;
+}
+
+.nav-button.undo.navigation-undo:hover {
+    background-color: #e67e22;
+    border-color: #d35400;
+}
+
 /* Random indicator */
 .random-indicator {
     display: inline-block;

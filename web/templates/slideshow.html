@@ -61,12 +61,26 @@
         </div>
 
         <div class="slideshow-nav">
+            {{if .PendingDelete}}
             <a href="/slideshow/previous?current={{.Thumbnail.ID}}" 
-            class="nav-button undo{{if eq .BackCount 0}} disabled{{end}}"
-            {{if eq .BackCount 0}}onclick="return false;"{{end}}
-            title="Undo last action">
+            class="nav-button undo delete-undo"
+            title="Undo deletion">
+                🗑️ Undo Delete
+            </a>
+            {{else if gt .BackCount 0}}
+            <a href="/slideshow/previous?current={{.Thumbnail.ID}}" 
+            class="nav-button undo navigation-undo"
+            title="Go back to previous slide">
+                ← Undo
+            </a>
+            {{else}}
+            <a href="/slideshow/previous?current={{.Thumbnail.ID}}" 
+            class="nav-button undo disabled"
+            onclick="return false;"
+            title="No previous slide to undo to">
                 Undo
             </a>
+            {{end}}
             
 
             
