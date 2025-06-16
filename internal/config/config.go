@@ -34,6 +34,9 @@ type Config struct {
 
 	// Import settings
 	ImportExisting bool
+
+	// Deletion settings
+	PreventDeletion bool
 }
 
 // New creates a new Config with values from environment variables or defaults
@@ -62,6 +65,9 @@ func New() *Config {
 
 		// Import settings
 		ImportExisting: getEnvAsBool("IMPORT_EXISTING", false),
+
+		// Deletion settings
+		PreventDeletion: getEnvAsBool("PREVENT_DELETION", false),
 	}
 
 	// Derive DB path - check DATABASE_PATH first, then default

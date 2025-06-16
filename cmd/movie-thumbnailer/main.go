@@ -28,6 +28,7 @@ import (
 func main() {
 	// Define all command-line flags
 	importFlag := flag.Bool("import-existing", false, "Import existing thumbnails without recreating them")
+	preventDeletionFlag := flag.Bool("prevent-deletion", false, "Prevent deletion of images marked for deletion")
 	versionFlag := flag.Bool("version", false, "Print version information and exit")
 
 	// Parse all flags once
@@ -53,6 +54,11 @@ func main() {
 	if *importFlag {
 		cfg.ImportExisting = true
 		log.Info("Import existing thumbnails mode enabled")
+	}
+
+	if *preventDeletionFlag {
+		cfg.PreventDeletion = true
+		log.Info("Deletion prevention mode enabled - images marked for deletion will NOT be deleted")
 	}
 
 	if cfg.Debug {

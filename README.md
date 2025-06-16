@@ -50,6 +50,21 @@ podman run -d --name movie-thumbnailer \
   movie-thumbnailer-go --import-existing
 ```
 
+### Preventing File Deletion
+
+To prevent the actual deletion of files marked for deletion, use the `--prevent-deletion` flag:
+
+```bash
+podman run -d --name movie-thumbnailer \
+  -v "$(pwd)/movies:/movies:ro" \
+  -v "$(pwd)/thumbnails:/thumbnails" \
+  -v "$(pwd)/data:/data" \
+  -p 8080:8080 \
+  movie-thumbnailer-go --prevent-deletion
+```
+
+This can also be set via the environment variable `PREVENT_DELETION=true`.
+
 You can also set the environment variable `IMPORT_EXISTING=true` to enable this feature.
 
 When using this feature:
@@ -81,6 +96,7 @@ You can configure the application by setting environment variables:
 - `SCAN_INTERVAL`: Interval between background scans (default: `1h`)
 - `DEBUG`: Enable debug logging (default: `false`)
 - `IMPORT_EXISTING`: Import existing thumbnails without regenerating (default: `false`)
+- `PREVENT_DELETION`: Prevent deletion of images marked for deletion (default: `false`)
 
 ## Database Schema
 

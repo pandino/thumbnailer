@@ -508,6 +508,12 @@ func (s *Scanner) cleanupOrphanedThumbnails(ctx context.Context) error {
 
 // processDeletedItems processes all items marked for deletion
 func (s *Scanner) processDeletedItems(ctx context.Context) error {
+	// Check if deletion prevention is enabled
+	if s.cfg.PreventDeletion {
+		s.log.Info("Deletion prevention is enabled - skipping processing of items marked for deletion")
+		return nil
+	}
+
 	// Get all thumbnails marked for deletion
 	thumbnails, err := s.db.GetDeletedThumbnails(0)
 	if err != nil {
