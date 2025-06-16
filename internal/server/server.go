@@ -120,7 +120,7 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 			"duration":   time.Since(start),
 			"user-agent": r.UserAgent(),
 			"remote":     r.RemoteAddr,
-		}).Info("HTTP request")
+		}).Debug("HTTP request")
 	})
 }
 

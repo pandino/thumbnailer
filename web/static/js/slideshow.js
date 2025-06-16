@@ -152,7 +152,17 @@ function submitFormAjax(form, callback) {
     
     xhr.onload = function() {
         if (xhr.status >= 200 && xhr.status < 400) {
-            // Success
+            // Success - check if server wants us to redirect
+            try {
+                const response = JSON.parse(xhr.responseText);
+                if (response.redirect) {
+                    window.location.href = response.redirect;
+                    return;
+                }
+            } catch (e) {
+                // Not JSON or no redirect, continue with callback
+            }
+            
             if (callback) {
                 callback();
             }

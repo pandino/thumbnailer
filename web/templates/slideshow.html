@@ -15,14 +15,12 @@
                 <span class="slideshow-counter">Thumbnail {{.Current}} of {{.Total}} <span class="random-indicator">Random Order</span></span>
                 {{if eq .Thumbnail.Status "deleted"}}
                 <span class="deletion-status">Deleted</span>
-                {{else if .PendingDelete}}
-                <span class="deletion-status pending">Pending Deletion (Press U to Undo)</span>
                 {{end}}
             </div>
             <div class="slideshow-actions">
                 <form action="/slideshow/delete" method="post" id="delete-form">
                     <input type="hidden" name="path" value="{{.Thumbnail.MoviePath}}">
-                    <button type="submit" class="action-icon-button danger" title="Delete movie" {{if or (eq .Thumbnail.Status "deleted") .PendingDelete}}disabled{{end}}>
+                    <button type="submit" class="action-icon-button danger" title="Delete movie" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
                         <span class="action-icon">🗑️</span>
                     </button>
                 </form>
@@ -34,7 +32,7 @@
             <div class="source-badge imported">Imported</div>
             {{end}}
             <img src="/thumbnails/{{.Thumbnail.ThumbnailPath}}" alt="{{.Thumbnail.MovieFilename}}" 
-                class="thumbnail-image {{if or (eq .Thumbnail.Status "deleted") .PendingDelete}}pending-deletion{{end}} {{.Thumbnail.Source}}">>
+                class="thumbnail-image {{.Thumbnail.Source}}">
         </div>
 
         <div class="movie-details">
@@ -65,13 +63,13 @@
             <a href="/slideshow/previous?current={{.Thumbnail.ID}}" 
             class="nav-button undo delete-undo"
             title="Undo deletion">
-                🗑️ Undo Delete
+                Undo
             </a>
             {{else if .HasPrevious}}
             <a href="/slideshow/previous?current={{.Thumbnail.ID}}" 
-            class="nav-button undo navigation-undo"
+            class="nav-button undo"
             title="Go back to previous slide">
-                ← Undo
+                Undo
             </a>
             {{else}}
             <a href="/slideshow/previous?current={{.Thumbnail.ID}}" 
@@ -84,8 +82,8 @@
             
 
             
-            <a href="/slideshow/next?current={{.Thumbnail.ID}}" class="nav-button next" title="Mark as viewed and go to next random thumbnail">
-                Next (Mark as Viewed)
+            <a href="/slideshow/next?current={{.Thumbnail.ID}}" class="nav-button next" title="{{if .IsLastImage}}Mark as viewed and return to home{{else}}Mark as viewed and go to next random thumbnail{{end}}">
+                {{if .IsLastImage}}Finish{{else}}Next{{end}}
             </a>
         </div>
 
@@ -93,7 +91,11 @@
             <p>
                 <span class="shortcut-group">
                     <span class="shortcut">→</span> or <span class="shortcut">Space</span>: 
+                    {{if .IsLastImage}}
+                    <span class="shortcut-value">Finish (Mark as Viewed)</span>
+                    {{else}}
                     <span class="shortcut-value">Next Random (Mark as Viewed)</span>
+                    {{end}}
                 </span>
                 
                 <span class="shortcut-group">
@@ -109,8 +111,10 @@
                 
                 <span class="shortcut-group">
                     <span class="shortcut">D</span>: 
-                    {{if .PendingDelete}}
-                    <span class="shortcut-disabled">Delete (Pending)</span>
+                    {{if eq .Thumbnail.Status "deleted"}}
+                    <span class="shortcut-disabled">Delete (Already Deleted)</span>
+                    {{else if .IsLastImage}}
+                    <span class="shortcut-value">Delete & Finish</span>
                     {{else}}
                     <span class="shortcut-value">Delete</span>
                     {{end}}
@@ -118,7 +122,11 @@
                 
                 <span class="shortcut-group">
                     <span class="shortcut">S</span>: 
+                    {{if .IsLastImage}}
+                    <span class="shortcut-value">Skip & Finish</span>
+                    {{else}}
                     <span class="shortcut-value">Skip (No Mark as Viewed)</span>
+                    {{end}}
                 </span>
                 
                 <span class="shortcut-group">

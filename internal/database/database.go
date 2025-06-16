@@ -272,13 +272,31 @@ func (d *DB) GetByThumbnailPath(thumbnailPath string) (*models.Thumbnail, error)
 
 // GetRandomUnviewedThumbnail gets a random unviewed thumbnail
 func (d *DB) GetRandomUnviewedThumbnail() (*models.Thumbnail, error) {
-	// First, count the total number of unviewed thumbnails
+	return d.GetRandomUnviewedThumbnailExcluding()
+}
+
+// GetRandomUnviewedThumbnailExcluding gets a random unviewed thumbnail excluding specified IDs
+func (d *DB) GetRandomUnviewedThumbnailExcluding(excludeIDs ...int64) (*models.Thumbnail, error) {
+	// Build the WHERE clause with exclusions
+	whereClause := "WHERE status = 'success' AND viewed = 0 AND status != 'deleted'"
+	args := make([]interface{}, 0, len(excludeIDs))
+
+	if len(excludeIDs) > 0 {
+		whereClause += " AND id NOT IN ("
+		for i, id := range excludeIDs {
+			if i > 0 {
+				whereClause += ","
+			}
+			whereClause += "?"
+			args = append(args, id)
+		}
+		whereClause += ")"
+	}
+
+	// First, count the total number of unviewed thumbnails (excluding specified IDs)
 	var count int
-	err := d.db.QueryRow(`
-		SELECT COUNT(*) 
-		FROM thumbnails 
-		WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
-	`).Scan(&count)
+	countQuery := "SELECT COUNT(*) FROM thumbnails " + whereClause
+	err := d.db.QueryRow(countQuery, args...).Scan(&count)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to count unviewed thumbnails: %w", err)
@@ -300,15 +318,18 @@ func (d *DB) GetRandomUnviewedThumbnail() (*models.Thumbnail, error) {
 
 	// Get a random thumbnail using LIMIT and OFFSET
 	thumbnail := &models.Thumbnail{}
-	err = d.db.QueryRow(`
+	selectQuery := `
 		SELECT 
 			id, movie_path, movie_filename, thumbnail_path, 
 			created_at, updated_at, status, viewed,
 			width, height, duration, file_size, error_message, source
-		FROM thumbnails 
-		WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
-		LIMIT 1 OFFSET ?
-	`, randomNum.Int64()).Scan(
+		FROM thumbnails ` + whereClause + `
+		LIMIT 1 OFFSET ?`
+
+	// Add the offset parameter to the arguments
+	args = append(args, randomNum.Int64())
+
+	err = d.db.QueryRow(selectQuery, args...).Scan(
 		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
 		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
 		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.FileSize, &thumbnail.ErrorMessage, &thumbnail.Source,
