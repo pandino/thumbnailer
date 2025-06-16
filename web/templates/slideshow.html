@@ -67,7 +67,7 @@
             title="Undo deletion">
                 🗑️ Undo Delete
             </a>
-            {{else if gt .BackCount 0}}
+            {{else if .HasPrevious}}
             <a href="/slideshow/previous?current={{.Thumbnail.ID}}" 
             class="nav-button undo navigation-undo"
             title="Go back to previous slide">
@@ -100,7 +100,7 @@
                     <span class="shortcut">U</span>: 
                     {{if .PendingDelete}}
                     <span class="shortcut-value">Undo Delete</span>
-                    {{else if gt .BackCount 0}}
+                    {{else if .HasPrevious}}
                     <span class="shortcut-value">Undo</span>
                     {{else}}
                     <span class="shortcut-disabled">Undo (No history)</span>

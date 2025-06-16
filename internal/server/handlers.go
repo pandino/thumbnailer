@@ -409,26 +409,35 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 	position := session.ViewedCount + 1
 
 	// Check if we have a valid previous thumbnail for undo
-	backCount := 0
 	if session.PreviousID > 0 {
 		// Check if the previous thumbnail exists and is not deleted
 		prevThumb, err := s.db.GetByID(session.PreviousID)
-		if err == nil && prevThumb != nil && prevThumb.Status != models.StatusDeleted {
-			backCount = 1
-			s.log.WithFields(logrus.Fields{
-				"previousID": session.PreviousID,
-				"backCount":  backCount,
-			}).Info("Setting backCount to 1")
-		} else {
+		if err != nil || prevThumb == nil || prevThumb.Status == models.StatusDeleted {
+			// Invalid previous thumbnail - reset to 0
 			s.log.WithFields(logrus.Fields{
 				"previousID":   session.PreviousID,
 				"prevThumb":    prevThumb,
 				"error":        err,
 				"prevThumbNil": prevThumb == nil,
-			}).Info("Previous thumbnail invalid, backCount remains 0")
+			}).Info("Previous thumbnail invalid, resetting PreviousID to 0")
+			session.PreviousID = 0
+
+			// Save the updated session
+			sessionJSON, err := json.Marshal(session)
+			if err == nil {
+				http.SetCookie(w, &http.Cookie{
+					Name:     "slideshow_session",
+					Value:    base64.StdEncoding.EncodeToString(sessionJSON),
+					Path:     "/",
+					MaxAge:   86400 * 30, // 30 days
+					HttpOnly: true,
+				})
+			}
+		} else {
+			s.log.WithFields(logrus.Fields{
+				"previousID": session.PreviousID,
+			}).Info("Valid previous thumbnail found")
 		}
-	} else {
-		s.log.WithField("sessionPreviousID", session.PreviousID).Info("No PreviousID set, backCount remains 0")
 	}
 
 	// Parse template
@@ -444,14 +453,12 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		Thumbnail     *models.Thumbnail
 		Total         int
 		Current       int
-		BackCount     int
 		HasPrevious   bool
 		PendingDelete bool
 	}{
 		Thumbnail:     thumbnail,
 		Total:         session.TotalImages,
 		Current:       position,
-		BackCount:     backCount,
 		HasPrevious:   session.PreviousID > 0,
 		PendingDelete: session.PendingDelete && session.PreviousID == thumbnail.ID,
 	}
