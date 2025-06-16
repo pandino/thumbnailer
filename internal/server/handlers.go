@@ -17,12 +17,13 @@ import (
 )
 
 type SessionData struct {
-	TotalImages int   `json:"total_images"`
-	ViewedCount int   `json:"viewed_count"`
-	CurrentID   int64 `json:"current_id"`
-	StartedAt   int64 `json:"started_at"`
-	PreviousID  int64 `json:"previous_id"` // Store previous thumbnail ID for single undo
-	NextID      int64 `json:"next_id"`     // Store next thumbnail ID for coordination with prefetcher
+	TotalImages   int   `json:"total_images"`
+	ViewedCount   int   `json:"viewed_count"`
+	CurrentID     int64 `json:"current_id"`
+	StartedAt     int64 `json:"started_at"`
+	PreviousID    int64 `json:"previous_id"`    // Store previous thumbnail ID for single undo/navigation
+	NextID        int64 `json:"next_id"`        // Store next thumbnail ID for coordination with prefetcher
+	PendingDelete bool  `json:"pending_delete"` // Flag indicating if PreviousID thumbnail is marked for deletion
 }
 
 // handleControlPage renders the control page
@@ -208,12 +209,13 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 
 		// Initialize new session with the count of unviewed thumbnails
 		session = SessionData{
-			TotalImages: stats.Unviewed,
-			ViewedCount: 0,
-			CurrentID:   0,
-			StartedAt:   time.Now().Unix(),
-			PreviousID:  0, // Initialize empty previous ID
-			NextID:      0, // Initialize empty next ID
+			TotalImages:   stats.Unviewed,
+			ViewedCount:   0,
+			CurrentID:     0,
+			StartedAt:     time.Now().Unix(),
+			PreviousID:    0, // Initialize empty previous ID
+			NextID:        0, // Initialize empty next ID
+			PendingDelete: false,
 		}
 		s.log.Info("Created new session with CurrentID=0, ViewedCount=0, PreviousID=0, NextID=0")
 
@@ -246,12 +248,13 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 						stats = &models.Stats{}
 					}
 					session = SessionData{
-						TotalImages: stats.Unviewed,
-						ViewedCount: 0,
-						CurrentID:   0,
-						StartedAt:   time.Now().Unix(),
-						PreviousID:  0,
-						NextID:      0,
+						TotalImages:   stats.Unviewed,
+						ViewedCount:   0,
+						CurrentID:     0,
+						StartedAt:     time.Now().Unix(),
+						PreviousID:    0,
+						NextID:        0,
+						PendingDelete: false,
 					}
 				}
 			}
@@ -262,11 +265,13 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 				stats = &models.Stats{}
 			}
 			session = SessionData{
-				TotalImages: stats.Unviewed,
-				ViewedCount: 0,
-				CurrentID:   0,
-				StartedAt:   time.Now().Unix(),
-				PreviousID:  0,
+				TotalImages:   stats.Unviewed,
+				ViewedCount:   0,
+				CurrentID:     0,
+				StartedAt:     time.Now().Unix(),
+				PreviousID:    0,
+				NextID:        0,
+				PendingDelete: false,
 			}
 
 			// Save to cookie
@@ -423,17 +428,19 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 
 	// Render template with data
 	data := struct {
-		Thumbnail   *models.Thumbnail
-		Total       int
-		Current     int
-		BackCount   int
-		HasPrevious bool
+		Thumbnail     *models.Thumbnail
+		Total         int
+		Current       int
+		BackCount     int
+		HasPrevious   bool
+		PendingDelete bool
 	}{
-		Thumbnail:   thumbnail,
-		Total:       session.TotalImages,
-		Current:     position,
-		BackCount:   backCount,
-		HasPrevious: session.PreviousID > 0,
+		Thumbnail:     thumbnail,
+		Total:         session.TotalImages,
+		Current:       position,
+		BackCount:     backCount,
+		HasPrevious:   session.PreviousID > 0,
+		PendingDelete: session.PendingDelete && session.PreviousID == thumbnail.ID,
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
@@ -470,11 +477,13 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				// Reset session on unmarshal error
 				session = SessionData{
-					TotalImages: 0,
-					ViewedCount: 0,
-					CurrentID:   0,
-					StartedAt:   time.Now().Unix(),
-					PreviousID:  0,
+					TotalImages:   0,
+					ViewedCount:   0,
+					CurrentID:     0,
+					StartedAt:     time.Now().Unix(),
+					PreviousID:    0,
+					NextID:        0,
+					PendingDelete: false,
 				}
 			}
 		}
@@ -483,27 +492,26 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 	// Check if this is a skip operation (don't mark as viewed)
 	skipViewing := r.URL.Query().Get("skip") == "true"
 
-	// Mark current thumbnail as viewed (unless skipping)
-	if currentID > 0 && !skipViewing {
-		thumbnail, err := s.db.GetByID(currentID)
-		if err == nil && thumbnail != nil && thumbnail.Status != models.StatusDeleted {
-			err = s.db.MarkAsViewed(thumbnail.ThumbnailPath)
-			if err != nil {
-				s.log.WithError(err).Error("Failed to mark as viewed")
-				// Continue anyway
-			}
-
-			// Update session viewed count if this is the current session thumbnail
-			if currentID == session.CurrentID {
-				session.ViewedCount++
-
-				// Store current ID as previous for single undo
-				session.PreviousID = currentID
-			}
+	// First, commit any pending viewing from previous navigation
+	if session.PreviousID != 0 && session.PreviousID != currentID && !session.PendingDelete {
+		// Mark the previous thumbnail as viewed (delayed from last navigation)
+		if err := s.db.MarkAsViewedByID(session.PreviousID); err != nil {
+			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to mark previous thumbnail as viewed")
+		} else {
+			s.log.WithField("thumbnail_id", session.PreviousID).Info("Marked previous thumbnail as viewed (delayed)")
+			session.ViewedCount++
 		}
-	} else if currentID > 0 && skipViewing {
-		// For skip operation, just update the session to track the current ID as previous for navigation
-		session.PreviousID = currentID
+	}
+
+	// Commit any pending deletion when moving to next (regardless of skip or normal navigation)
+	if session.PendingDelete && session.PreviousID != 0 && session.PreviousID != currentID {
+		if err := s.db.MarkForDeletionByID(session.PreviousID); err != nil {
+			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit pending deletion")
+		} else {
+			s.log.WithField("thumbnail_id", session.PreviousID).Info("Committed pending deletion to database")
+		}
+		// Clear the pending deletion
+		session.PendingDelete = false
 	}
 
 	// Get a random unviewed thumbnail instead of the next in sequence
@@ -552,6 +560,18 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+	// Now determine if we should set up undo for the current slide
+	// Store current ID as previous for single undo, but don't mark as viewed yet
+	if currentID > 0 && !skipViewing {
+		thumbnail, err := s.db.GetByID(currentID)
+		if err == nil && thumbnail != nil && thumbnail.Status != models.StatusDeleted {
+			// Store current ID as previous for single undo (viewing will be deferred)
+			session.PreviousID = currentID
+		}
+	} else if currentID > 0 && skipViewing {
+		// For skip operation, just update the session to track the current ID as previous for navigation
+		session.PreviousID = currentID
+	}
 
 	// Update session with next thumbnail
 	session.CurrentID = nextThumbnail.ID
@@ -583,7 +603,7 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/slideshow?id=%d", nextThumbnail.ID), http.StatusSeeOther)
 }
 
-// handleSlideshowPrevious shows the previous thumbnail
+// handleSlideshowPrevious implements undo functionality for deletions and navigation
 func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request) {
 	// Get current thumbnail ID from query string
 	currentIDStr := r.URL.Query().Get("current")
@@ -610,17 +630,47 @@ func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request)
 			if err != nil {
 				// Reset session on unmarshal error
 				session = SessionData{
-					TotalImages: 0,
-					ViewedCount: 0,
-					CurrentID:   0,
-					StartedAt:   time.Now().Unix(),
-					PreviousID:  0,
+					TotalImages:   0,
+					ViewedCount:   0,
+					CurrentID:     0,
+					StartedAt:     time.Now().Unix(),
+					PreviousID:    0,
+					NextID:        0,
+					PendingDelete: false,
 				}
 			}
 		}
 	}
 
-	// Check if we have a previous thumbnail
+	// Check if there's a pending deletion to undo
+	if session.PendingDelete && session.PreviousID == currentID {
+		// This is an undo operation - clear the pending deletion
+		s.log.WithFields(logrus.Fields{
+			"thumbnail": session.PreviousID,
+		}).Info("Undoing pending deletion")
+
+		// Clear the pending deletion from session
+		session.PendingDelete = false
+
+		// Stay on the current thumbnail (reload without delete flag)
+		// Save the updated session first
+		sessionJSON, err := json.Marshal(session)
+		if err == nil {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "slideshow_session",
+				Value:    base64.StdEncoding.EncodeToString(sessionJSON),
+				Path:     "/",
+				MaxAge:   86400 * 30, // 30 days
+				HttpOnly: true,
+			})
+		}
+
+		// Redirect to the same thumbnail (this will reload without delete flag)
+		http.Redirect(w, r, fmt.Sprintf("/slideshow?id=%d", currentID), http.StatusSeeOther)
+		return
+	}
+
+	// Regular previous navigation - check if we have a previous thumbnail
 	if session.PreviousID == 0 {
 		// No previous thumbnail, redirect back to current
 		http.Redirect(w, r, fmt.Sprintf("/slideshow?id=%d", currentID), http.StatusSeeOther)
@@ -649,7 +699,11 @@ func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request)
 
 	// Update session with previous thumbnail ID
 	session.CurrentID = prevID
-	session.PreviousID = 0 // Clear previous ID after going back (single undo consumed)
+	session.NextID = currentID // Save current slide as next ID for return navigation
+	session.PreviousID = 0     // Clear previous ID after going back (single undo consumed)
+
+	// When undoing navigation, we don't want to mark the previous slide as viewed
+	// since the user is going back to it
 
 	// Save the updated session
 	sessionJSON, err := json.Marshal(session)
@@ -667,25 +721,20 @@ func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request)
 	http.Redirect(w, r, fmt.Sprintf("/slideshow?id=%d", prevID), http.StatusSeeOther)
 }
 
-// handleMarkViewed marks a thumbnail as viewed
+// handleMarkViewed marks a thumbnail as viewed by ID
 func (s *Server) handleMarkViewed(w http.ResponseWriter, r *http.Request) {
-	// Get thumbnail path from form
-	thumbnailPath := r.FormValue("path")
-	if thumbnailPath == "" {
-		http.Error(w, "Thumbnail path is required", http.StatusBadRequest)
+	// Get thumbnail ID from form (required)
+	thumbnailIDStr := r.FormValue("id")
+	if thumbnailIDStr == "" {
+		http.Error(w, "Thumbnail ID is required", http.StatusBadRequest)
 		return
 	}
 
-	// Get thumbnail ID from form
-	thumbnailIDStr := r.FormValue("id")
-	var thumbnailID int64 = 0
-	if thumbnailIDStr != "" {
-		var err error
-		thumbnailID, err = strconv.ParseInt(thumbnailIDStr, 10, 64)
-		if err != nil {
-			s.log.WithError(err).Error("Invalid thumbnail ID")
-			// Continue anyway
-		}
+	thumbnailID, err := strconv.ParseInt(thumbnailIDStr, 10, 64)
+	if err != nil {
+		s.log.WithError(err).Error("Invalid thumbnail ID")
+		http.Error(w, "Invalid thumbnail ID", http.StatusBadRequest)
+		return
 	}
 
 	// Get session data from cookie
@@ -715,9 +764,9 @@ func (s *Server) handleMarkViewed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Mark as viewed
-	if err := s.db.MarkAsViewed(thumbnailPath); err != nil {
-		s.log.WithError(err).WithField("thumbnail", thumbnailPath).Error("Failed to mark as viewed")
+	// Mark as viewed using ID
+	if err := s.db.MarkAsViewedByID(thumbnailID); err != nil {
+		s.log.WithError(err).WithField("thumbnail_id", thumbnailID).Error("Failed to mark as viewed")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -751,7 +800,7 @@ func (s *Server) handleMarkViewed(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/slideshow/next?current=%s", thumbnailIDStr), http.StatusSeeOther)
 }
 
-// handleDelete marks a movie and its thumbnail for deletion
+// handleDelete marks a movie for deletion in the session (soft delete with undo capability)
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	// Get movie path from form
 	moviePath := r.FormValue("path")
@@ -773,14 +822,59 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mark for deletion instead of deleting immediately
-	if err := s.db.MarkForDeletion(moviePath); err != nil {
-		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to mark for deletion")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
+	// Get session from cookie
+	var session SessionData
+	sessionCookie, err := r.Cookie("slideshow_session")
+	if err == nil && sessionCookie.Value != "" {
+		// Decode the cookie value
+		jsonData, err := base64.StdEncoding.DecodeString(sessionCookie.Value)
+		if err == nil {
+			err = json.Unmarshal(jsonData, &session)
+			if err != nil {
+				// Reset session on unmarshal error
+				session = SessionData{
+					TotalImages:   0,
+					ViewedCount:   0,
+					CurrentID:     0,
+					StartedAt:     time.Now().Unix(),
+					PreviousID:    0,
+					NextID:        0,
+					PendingDelete: false,
+				}
+			}
+		}
 	}
 
-	s.log.WithField("movie", moviePath).Info("Marked movie for deletion")
+	// If there's already a pending deletion, commit it to the database first
+	if session.PendingDelete && session.PreviousID != 0 {
+		if err := s.db.MarkForDeletionByID(session.PreviousID); err != nil {
+			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit pending deletion")
+			// Continue anyway - don't fail the current operation
+		} else {
+			s.log.WithField("thumbnail_id", session.PreviousID).Info("Committed pending deletion to database")
+		}
+	}
+
+	// Mark the current thumbnail for deletion in the session only (not in database yet)
+	session.PreviousID = thumbnail.ID // Set as previous for undo functionality
+	session.PendingDelete = true      // Flag that PreviousID is pending deletion
+
+	// Save the updated session
+	sessionJSON, err := json.Marshal(session)
+	if err == nil {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "slideshow_session",
+			Value:    base64.StdEncoding.EncodeToString(sessionJSON),
+			Path:     "/",
+			MaxAge:   86400 * 30, // 30 days
+			HttpOnly: true,
+		})
+	}
+
+	s.log.WithFields(logrus.Fields{
+		"movie":     moviePath,
+		"thumbnail": thumbnail.ID,
+	}).Info("Marked movie for deletion in session (pending)")
 
 	// If ajax request, return JSON response
 	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
@@ -790,7 +884,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Otherwise redirect to next
-	http.Redirect(w, r, "/slideshow/next", http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/slideshow/next?current=%d", thumbnail.ID), http.StatusSeeOther)
 }
 
 // handleUndoDelete restores a movie that was marked for deletion

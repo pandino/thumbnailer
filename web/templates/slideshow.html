@@ -14,13 +14,15 @@
                 <span class="movie-title">{{.Thumbnail.MovieFilename}}</span>
                 <span class="slideshow-counter">Thumbnail {{.Current}} of {{.Total}} <span class="random-indicator">Random Order</span></span>
                 {{if eq .Thumbnail.Status "deleted"}}
-                <span class="deletion-status">Pending Deletion</span>
+                <span class="deletion-status">Deleted</span>
+                {{else if .PendingDelete}}
+                <span class="deletion-status pending">Pending Deletion (Press U to Undo)</span>
                 {{end}}
             </div>
             <div class="slideshow-actions">
                 <form action="/slideshow/delete" method="post" id="delete-form">
                     <input type="hidden" name="path" value="{{.Thumbnail.MoviePath}}">
-                    <button type="submit" class="action-icon-button danger" title="Delete movie" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
+                    <button type="submit" class="action-icon-button danger" title="Delete movie" {{if or (eq .Thumbnail.Status "deleted") .PendingDelete}}disabled{{end}}>
                         <span class="action-icon">🗑️</span>
                     </button>
                 </form>
@@ -32,7 +34,7 @@
             <div class="source-badge imported">Imported</div>
             {{end}}
             <img src="/thumbnails/{{.Thumbnail.ThumbnailPath}}" alt="{{.Thumbnail.MovieFilename}}" 
-                class="thumbnail-image {{if eq .Thumbnail.Status "deleted"}}pending-deletion{{end}} {{.Thumbnail.Source}}">
+                class="thumbnail-image {{if or (eq .Thumbnail.Status "deleted") .PendingDelete}}pending-deletion{{end}} {{.Thumbnail.Source}}">>
         </div>
 
         <div class="movie-details">
@@ -60,10 +62,10 @@
 
         <div class="slideshow-nav">
             <a href="/slideshow/previous?current={{.Thumbnail.ID}}" 
-            class="nav-button prev{{if eq .BackCount 0}} disabled{{end}}"
+            class="nav-button undo{{if eq .BackCount 0}} disabled{{end}}"
             {{if eq .BackCount 0}}onclick="return false;"{{end}}
-            title="Go to previous thumbnail">
-                Previous
+            title="Undo last action">
+                Undo
             </a>
             
 
@@ -81,17 +83,23 @@
                 </span>
                 
                 <span class="shortcut-group">
-                    <span class="shortcut">←</span>: 
-                    {{if gt .BackCount 0}}
-                    <span class="shortcut-value">Previous</span>
+                    <span class="shortcut">U</span>: 
+                    {{if .PendingDelete}}
+                    <span class="shortcut-value">Undo Delete</span>
+                    {{else if gt .BackCount 0}}
+                    <span class="shortcut-value">Undo</span>
                     {{else}}
-                    <span class="shortcut-disabled">Previous (No history)</span>
+                    <span class="shortcut-disabled">Undo (No history)</span>
                     {{end}}
                 </span>
                 
                 <span class="shortcut-group">
                     <span class="shortcut">D</span>: 
+                    {{if .PendingDelete}}
+                    <span class="shortcut-disabled">Delete (Pending)</span>
+                    {{else}}
                     <span class="shortcut-value">Delete</span>
+                    {{end}}
                 </span>
                 
                 <span class="shortcut-group">

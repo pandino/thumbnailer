@@ -654,10 +654,21 @@ footer {
     animation: pulse 2s infinite;
 }
 
+.deletion-status.pending {
+    background-color: #f39c12; /* Orange color for pending */
+    animation: pendingPulse 1.5s infinite;
+}
+
 @keyframes pulse {
     0% { opacity: 0.7; }
     50% { opacity: 1; }
     100% { opacity: 0.7; }
+}
+
+@keyframes pendingPulse {
+    0% { opacity: 0.8; }
+    50% { opacity: 1; }
+    100% { opacity: 0.8; }
 }
 
 .thumbnail-image.pending-deletion {
@@ -739,7 +750,7 @@ footer {
     background-color: #c0392b;
 }
 
-.nav-button.prev.disabled {
+.nav-button.undo.disabled {
     opacity: 0.5;
     cursor: not-allowed;
     background-color: #95a5a6;

@@ -179,24 +179,24 @@ func (d *DB) UpdateStatus(moviePath string, status string, errorMsg string) erro
 	return err
 }
 
-// MarkAsViewed marks a thumbnail as viewed
-func (d *DB) MarkAsViewed(thumbnailPath string) error {
+// MarkAsViewedByID marks a thumbnail as viewed by ID
+func (d *DB) MarkAsViewedByID(id int64) error {
 	_, err := d.db.Exec(`
 		UPDATE thumbnails 
 		SET viewed = 1
-		WHERE thumbnail_path = ?`,
-		thumbnailPath,
+		WHERE id = ?`,
+		id,
 	)
 	return err
 }
 
-// MarkForDeletion marks a thumbnail for deletion without actually deleting it
-func (d *DB) MarkForDeletion(moviePath string) error {
+// MarkForDeletionByID marks a thumbnail for deletion by ID without actually deleting it
+func (d *DB) MarkForDeletionByID(id int64) error {
 	_, err := d.db.Exec(`
 		UPDATE thumbnails 
 		SET status = 'deleted'
-		WHERE movie_path = ?`,
-		moviePath,
+		WHERE id = ?`,
+		id,
 	)
 	return err
 }

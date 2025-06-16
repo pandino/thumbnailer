@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function setupKeyboardShortcuts() {
     document.addEventListener('keydown', function(e) {
         // Prevent default behavior for navigation keys
-        if ([' ', 'ArrowRight', 'ArrowLeft', 'd', 'D', 'Escape', 's', 'S'].includes(e.key)) {
+        if ([' ', 'ArrowRight', 'u', 'U', 'd', 'D', 'Escape', 's', 'S'].includes(e.key)) {
             e.preventDefault();
             
             // Handle different keys
@@ -25,10 +25,11 @@ function setupKeyboardShortcuts() {
                     navigateToNext();
                     break;
                 
-                case 'ArrowLeft':
-                    // Previous thumbnail - only if not disabled
-                    if (!isPreviousDisabled()) {
-                        navigateToPrevious();
+                case 'u':
+                case 'U':
+                    // Undo - only if not disabled
+                    if (!isUndoDisabled()) {
+                        navigateToUndo();
                     }
                     break;
                 
@@ -53,10 +54,10 @@ function setupKeyboardShortcuts() {
     });
 }
 
-// Check if previous button is disabled
-function isPreviousDisabled() {
-    const prevButton = document.querySelector('.nav-button.prev');
-    return prevButton && prevButton.classList.contains('disabled');
+// Check if undo button is disabled
+function isUndoDisabled() {
+    const undoButton = document.querySelector('.nav-button.undo');
+    return undoButton && undoButton.classList.contains('disabled');
 }
 
 // Navigate to next thumbnail
@@ -69,11 +70,11 @@ function navigateToNext() {
     }
 }
 
-// Navigate to previous thumbnail
-function navigateToPrevious() {
-    const prevButton = document.querySelector('.nav-button.prev');
-    if (prevButton && !prevButton.classList.contains('disabled')) {
-        prevButton.click();
+// Navigate to undo (previous) thumbnail
+function navigateToUndo() {
+    const undoButton = document.querySelector('.nav-button.undo');
+    if (undoButton && !undoButton.classList.contains('disabled')) {
+        undoButton.click();
         // Preload the next image after navigation
         setTimeout(preloadNextImage, 1000);
     }
@@ -131,10 +132,10 @@ function setupAjaxForms() {
         });
     }
     
-    // Disable clicks on disabled Previous button
-    const prevButton = document.querySelector('.nav-button.prev.disabled');
-    if (prevButton) {
-        prevButton.addEventListener('click', function(e) {
+    // Disable clicks on disabled Undo button
+    const undoButton = document.querySelector('.nav-button.undo.disabled');
+    if (undoButton) {
+        undoButton.addEventListener('click', function(e) {
             e.preventDefault();
             return false;
         });
