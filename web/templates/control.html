@@ -113,6 +113,9 @@
                     <a href="/slideshow?new=true" class="start-slideshow">Start New Slideshow</a>
                     {{if .HasSession}}
                     <a href="/slideshow" class="continue-slideshow">Continue Slideshow ({{.SessionViewedCount}}/{{.SessionTotalCount}})</a>
+                    {{if gt .SessionDeletedSize 0}}
+                    <span class="session-deleted-info">Deleted in this session: {{.SessionDeletedSizeFormatted}}</span>
+                    {{end}}
                     {{end}}
                 </div>
                 

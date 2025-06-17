@@ -12,26 +12,14 @@
             <a href="/" class="back-button">← Back to Control</a>
             <div class="slideshow-info">
                 <span class="movie-title">{{.Thumbnail.MovieFilename}}</span>
-                <span class="slideshow-counter">Thumbnail {{.Current}} of {{.Total}} <span class="random-indicator">Random Order</span></span>
+                <span class="slideshow-counter">
+                    Slide {{.Current}}/{{.Total}}{{if gt .SessionDeletedSize 0}} - Deleted {{.SessionDeletedSizeFormatted}}{{end}}
+                </span>
                 {{if eq .Thumbnail.Status "deleted"}}
                 <span class="deletion-status">Deleted</span>
                 {{end}}
             </div>
-            <div class="slideshow-actions">
-                {{if .IsLastThumbnail}}
-                <form action="/slideshow/delete-and-finish" method="post" id="delete-form">
-                    <button type="submit" class="action-icon-button danger" title="Delete movie and finish slideshow" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
-                        <span class="action-icon">🗑️</span>
-                    </button>
-                </form>
-                {{else}}
-                <form action="/slideshow/delete" method="post" id="delete-form">
-                    <button type="submit" class="action-icon-button danger" title="Delete movie" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
-                        <span class="action-icon">🗑️</span>
-                    </button>
-                </form>
-                {{end}}
-            </div>
+            <div class="slideshow-spacer"></div>
         </div>
 
         <div class="thumbnail-display">
@@ -39,7 +27,7 @@
             <div class="source-badge imported">Imported</div>
             {{end}}
             <img src="/thumbnails/{{.Thumbnail.ThumbnailPath}}" alt="{{.Thumbnail.MovieFilename}}" 
-                class="thumbnail-image {{.Thumbnail.Source}}">>
+                class="thumbnail-image {{.Thumbnail.Source}}">
         </div>
 
         <div class="movie-details">
@@ -82,6 +70,22 @@
                 Next
             </a>
             {{end}}
+            
+            <div class="nav-delete-action">
+                {{if .IsLastThumbnail}}
+                <form action="/slideshow/delete-and-finish" method="post" id="delete-form">
+                    <button type="submit" class="nav-button delete" title="Delete movie and finish slideshow" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
+                        🗑️
+                    </button>
+                </form>
+                {{else}}
+                <form action="/slideshow/delete" method="post" id="delete-form">
+                    <button type="submit" class="nav-button delete" title="Delete movie" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
+                        🗑️
+                    </button>
+                </form>
+                {{end}}
+            </div>
         </div>
 
         <div class="keyboard-shortcuts">

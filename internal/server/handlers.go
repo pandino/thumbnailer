@@ -50,6 +50,7 @@ type SessionData struct {
 	PreviousID      int64 `json:"previous_id"`    // Store previous thumbnail ID for single undo/navigation
 	NextID          int64 `json:"next_id"`        // Store next thumbnail ID for coordination with prefetcher
 	PendingDelete   bool  `json:"pending_delete"` // Flag indicating if PreviousID thumbnail is marked for deletion
+	DeletedSize     int64 `json:"deleted_size"`   // Total size in bytes of movies deleted in this session
 }
 
 // getSessionFromCookie retrieves and validates session data from cookie
@@ -113,6 +114,7 @@ func (s *Server) createNewSession() (*SessionData, error) {
 		PreviousID:      0,
 		NextID:          0,
 		PendingDelete:   false,
+		DeletedSize:     0,
 	}
 
 	return session, nil
@@ -155,6 +157,7 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 	var hasSession bool
 	var sessionViewedCount int
 	var sessionTotalCount int
+	var sessionDeletedSize int64
 
 	sessionCookie, err := r.Cookie("slideshow_session")
 	if err == nil && sessionCookie.Value != "" {
@@ -167,6 +170,7 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 				hasSession = true
 				sessionViewedCount = session.ViewedCount
 				sessionTotalCount = session.TotalImages
+				sessionDeletedSize = session.DeletedSize
 			}
 		}
 	}
@@ -181,23 +185,27 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 
 	// Render template with data
 	data := struct {
-		Stats                 *models.Stats
-		IsScanning            bool
-		HasSession            bool
-		SessionViewedCount    int
-		SessionTotalCount     int
-		Version               *VersionInfo
-		ViewedSizeFormatted   string
-		UnviewedSizeFormatted string
+		Stats                       *models.Stats
+		IsScanning                  bool
+		HasSession                  bool
+		SessionViewedCount          int
+		SessionTotalCount           int
+		SessionDeletedSize          int64
+		Version                     *VersionInfo
+		ViewedSizeFormatted         string
+		UnviewedSizeFormatted       string
+		SessionDeletedSizeFormatted string
 	}{
-		Stats:                 stats,
-		IsScanning:            s.scanner.IsScanning(),
-		HasSession:            hasSession,
-		SessionViewedCount:    sessionViewedCount,
-		SessionTotalCount:     sessionTotalCount,
-		Version:               s.version,
-		ViewedSizeFormatted:   formatBytes(stats.ViewedSize),
-		UnviewedSizeFormatted: formatBytes(stats.UnviewedSize),
+		Stats:                       stats,
+		IsScanning:                  s.scanner.IsScanning(),
+		HasSession:                  hasSession,
+		SessionViewedCount:          sessionViewedCount,
+		SessionTotalCount:           sessionTotalCount,
+		SessionDeletedSize:          sessionDeletedSize,
+		Version:                     s.version,
+		ViewedSizeFormatted:         formatBytes(stats.ViewedSize),
+		UnviewedSizeFormatted:       formatBytes(stats.UnviewedSize),
+		SessionDeletedSizeFormatted: formatBytes(sessionDeletedSize),
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
@@ -506,19 +514,23 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 
 	// Render template with data
 	data := struct {
-		Thumbnail       *models.Thumbnail
-		Total           int
-		Current         int
-		HasPrevious     bool
-		PendingDelete   bool
-		IsLastThumbnail bool
+		Thumbnail                   *models.Thumbnail
+		Total                       int
+		Current                     int
+		HasPrevious                 bool
+		PendingDelete               bool
+		IsLastThumbnail             bool
+		SessionDeletedSize          int64
+		SessionDeletedSizeFormatted string
 	}{
-		Thumbnail:       thumbnail,
-		Total:           session.TotalImages,
-		Current:         position,
-		HasPrevious:     session.PreviousID > 0 && session.PreviousID != session.CurrentID,
-		PendingDelete:   session.PendingDelete,
-		IsLastThumbnail: isLastThumbnail,
+		Thumbnail:                   thumbnail,
+		Total:                       session.TotalImages,
+		Current:                     position,
+		HasPrevious:                 session.PreviousID > 0 && session.PreviousID != session.CurrentID,
+		PendingDelete:               session.PendingDelete,
+		IsLastThumbnail:             isLastThumbnail,
+		SessionDeletedSize:          session.DeletedSize,
+		SessionDeletedSizeFormatted: formatBytes(session.DeletedSize),
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
@@ -555,10 +567,26 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 
 	// Commit any pending deletion when moving to next (regardless of skip or normal navigation)
 	if session.PendingDelete && session.PreviousID != 0 && session.PreviousID != currentID {
+		// Get the thumbnail to obtain its file size before marking for deletion
+		deletedThumbnail, err := s.db.GetByID(session.PreviousID)
+		if err != nil {
+			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to get thumbnail for deletion size tracking")
+		}
+
 		if err := s.db.MarkForDeletionByID(session.PreviousID); err != nil {
 			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit pending deletion")
 		} else {
 			s.log.WithField("thumbnail_id", session.PreviousID).Info("Committed pending deletion to database")
+
+			// Add the file size to the session's deleted size counter
+			if deletedThumbnail != nil {
+				session.DeletedSize += deletedThumbnail.FileSize
+				s.log.WithFields(logrus.Fields{
+					"thumbnail_id":       session.PreviousID,
+					"file_size":          deletedThumbnail.FileSize,
+					"total_deleted_size": session.DeletedSize,
+				}).Info("Added deleted movie size to session counter")
+			}
 		}
 		// Clear the pending deletion
 		session.PendingDelete = false
@@ -828,11 +856,27 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 	// If there's already a pending deletion, commit it to the database first
 	if session.PendingDelete && session.PreviousID != 0 {
+		// Get the thumbnail to obtain its file size before marking for deletion
+		deletedThumbnail, err := s.db.GetByID(session.PreviousID)
+		if err != nil {
+			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to get thumbnail for deletion size tracking")
+		}
+
 		if err := s.db.MarkForDeletionByID(session.PreviousID); err != nil {
 			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit pending deletion")
 			// Continue anyway - don't fail the current operation
 		} else {
 			s.log.WithField("thumbnail_id", session.PreviousID).Info("Committed pending deletion to database")
+
+			// Add the file size to the session's deleted size counter
+			if deletedThumbnail != nil {
+				session.DeletedSize += deletedThumbnail.FileSize
+				s.log.WithFields(logrus.Fields{
+					"thumbnail_id":       session.PreviousID,
+					"file_size":          deletedThumbnail.FileSize,
+					"total_deleted_size": session.DeletedSize,
+				}).Info("Added deleted movie size to session counter")
+			}
 		}
 	}
 
@@ -1170,9 +1214,14 @@ func (s *Server) handleDeleteAndFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Add the file size to the session's deleted size counter
+	session.DeletedSize += thumbnail.FileSize
+
 	s.log.WithFields(logrus.Fields{
-		"thumbnail_id": currentID,
-		"movie_path":   thumbnail.MoviePath,
+		"thumbnail_id":       currentID,
+		"movie_path":         thumbnail.MoviePath,
+		"file_size":          thumbnail.FileSize,
+		"total_deleted_size": session.DeletedSize,
 	}).Info("Marked last thumbnail for deletion and finishing slideshow")
 
 	// Clear the session cookie to end the slideshow
