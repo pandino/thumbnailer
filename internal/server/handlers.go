@@ -161,12 +161,14 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 		HasSession         bool
 		SessionViewedCount int
 		SessionTotalCount  int
+		Version            *VersionInfo
 	}{
 		Stats:              stats,
 		IsScanning:         s.scanner.IsScanning(),
 		HasSession:         hasSession,
 		SessionViewedCount: sessionViewedCount,
 		SessionTotalCount:  sessionTotalCount,
+		Version:            s.version,
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {

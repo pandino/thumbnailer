@@ -13,6 +13,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// VersionInfo holds application version information
+type VersionInfo struct {
+	Version   string
+	Commit    string
+	BuildDate string
+}
+
 // Server handles HTTP requests for the application
 type Server struct {
 	cfg     *config.Config
@@ -22,10 +29,11 @@ type Server struct {
 	server  *http.Server
 	router  *mux.Router
 	appCtx  context.Context
+	version *VersionInfo
 }
 
 // New creates a new Server
-func New(cfg *config.Config, db *database.DB, scanner *scanner.Scanner, log *logrus.Logger, appCtx context.Context) *Server {
+func New(cfg *config.Config, db *database.DB, scanner *scanner.Scanner, log *logrus.Logger, appCtx context.Context, version *VersionInfo) *Server {
 	s := &Server{
 		cfg:     cfg,
 		db:      db,
@@ -33,6 +41,7 @@ func New(cfg *config.Config, db *database.DB, scanner *scanner.Scanner, log *log
 		log:     log,
 		router:  mux.NewRouter(),
 		appCtx:  appCtx,
+		version: version,
 	}
 
 	// Initialize routes

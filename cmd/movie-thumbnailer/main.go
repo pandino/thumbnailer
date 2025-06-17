@@ -86,8 +86,15 @@ func main() {
 	// Initialize background worker
 	w := worker.New(cfg, s, log)
 
+	// Create version info
+	versionInfo := &server.VersionInfo{
+		Version:   version,
+		Commit:    commit,
+		BuildDate: buildDate,
+	}
+
 	// Initialize HTTP server
-	srv := server.New(cfg, db, s, log, ctx)
+	srv := server.New(cfg, db, s, log, ctx, versionInfo)
 
 	// Start background worker
 	go w.Start(ctx)
