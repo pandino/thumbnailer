@@ -80,6 +80,7 @@ You can configure the application by setting environment variables:
 ### Background Task Settings
 - `SCAN_INTERVAL`: Interval between background scans (default: `1h`)
 - `DEBUG`: Enable debug logging (default: `false`)
+- `DISABLE_DELETION`: Disable deletion worker and prevent processing of deletion queue (default: `false`)
 - `IMPORT_EXISTING`: Import existing thumbnails without regenerating (default: `false`)
 
 ## Database Schema

@@ -32,6 +32,9 @@ type Config struct {
 	ScanInterval time.Duration
 	Debug        bool
 
+	// Deletion worker settings
+	DisableDeletion bool
+
 	// Import settings
 	ImportExisting bool
 }
@@ -59,6 +62,9 @@ func New() *Config {
 		// Default background task settings
 		ScanInterval: getEnvAsDuration("SCAN_INTERVAL", "1h"),
 		Debug:        getEnvAsBool("DEBUG", false),
+
+		// Default deletion worker settings
+		DisableDeletion: getEnvAsBool("DISABLE_DELETION", false),
 
 		// Import settings
 		ImportExisting: getEnvAsBool("IMPORT_EXISTING", false),

@@ -70,6 +70,12 @@ func (w *Worker) Start(ctx context.Context) {
 				w.log.WithError(err).Error("Scheduled scan failed")
 			}
 		case <-cleanupTicker.C:
+			// Skip if deletion is disabled
+			if w.cfg.DisableDeletion {
+				w.log.Debug("Skipping scheduled cleanup because deletion is disabled")
+				continue
+			}
+
 			// Skip if a scan is already in progress
 			if w.scanner.IsScanning() {
 				w.log.Info("Skipping scheduled cleanup because a scan is in progress")
@@ -109,6 +115,11 @@ func (w *Worker) PerformScan(ctx context.Context) error {
 
 // PerformCleanup performs a cleanup of orphaned entries, thumbnails, and processes items marked for deletion
 func (w *Worker) PerformCleanup(ctx context.Context) error {
+	if w.cfg.DisableDeletion {
+		w.log.Info("Cleanup requested but deletion is disabled")
+		return fmt.Errorf("cleanup is disabled via DISABLE_DELETION flag")
+	}
+
 	if w.scanner.IsScanning() {
 		return fmt.Errorf("cannot perform cleanup while scan is in progress")
 	}

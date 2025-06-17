@@ -366,16 +366,20 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 func (s *Scanner) CleanupOrphans(ctx context.Context) error {
 	s.log.Info("Cleaning up orphaned entries, thumbnails, and processing deletion queue")
 
-	// First, process items marked for deletion
-	if err := s.processDeletedItems(ctx); err != nil {
-		s.log.WithError(err).Error("Error processing deleted items")
-		// Check if the context is done before continuing
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			// Continue with other cleanup steps
+	// First, process items marked for deletion (skip if deletion is disabled)
+	if !s.cfg.DisableDeletion {
+		if err := s.processDeletedItems(ctx); err != nil {
+			s.log.WithError(err).Error("Error processing deleted items")
+			// Check if the context is done before continuing
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				// Continue with other cleanup steps
+			}
 		}
+	} else {
+		s.log.Debug("Skipping deletion processing because deletion is disabled")
 	}
 
 	// Get all thumbnails from database (except deleted ones that were just processed)

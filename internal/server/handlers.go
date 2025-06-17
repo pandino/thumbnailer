@@ -198,6 +198,11 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 
 // handleCleanup triggers a cleanup of orphaned entries and thumbnails
 func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.DisableDeletion {
+		http.Error(w, "Cleanup is disabled via DISABLE_DELETION flag", http.StatusForbidden)
+		return
+	}
+
 	if s.scanner.IsScanning() {
 		http.Error(w, "Cannot perform cleanup while scanning", http.StatusConflict)
 		return
@@ -240,6 +245,11 @@ func (s *Server) handleResetViews(w http.ResponseWriter, r *http.Request) {
 
 // handleProcessDeletions triggers immediate processing of the deletion queue
 func (s *Server) handleProcessDeletions(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.DisableDeletion {
+		http.Error(w, "Deletion processing is disabled via DISABLE_DELETION flag", http.StatusForbidden)
+		return
+	}
+
 	if s.scanner.IsScanning() {
 		http.Error(w, "Cannot process deletions while scanning", http.StatusConflict)
 		return
