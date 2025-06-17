@@ -630,6 +630,17 @@ footer {
     background-color: var(--secondary-color);
 }
 
+/* Finish button styling */
+.nav-button.finish {
+    background-color: #27ae60;
+    border-color: #27ae60;
+}
+
+.nav-button.finish:hover {
+    background-color: #219a52;
+    border-color: #219a52;
+}
+
 .keyboard-shortcuts {
     text-align: center;
     font-size: 0.8rem;

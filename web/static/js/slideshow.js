@@ -60,12 +60,17 @@ function isUndoDisabled() {
     return undoButton && undoButton.classList.contains('disabled');
 }
 
-// Navigate to next thumbnail
+// Navigate to next thumbnail or finish if last
 function navigateToNext() {
     const nextButton = document.querySelector('.nav-button.next');
-    if (nextButton) {
+    const finishButton = document.querySelector('.nav-button.finish');
+    
+    if (finishButton) {
+        // This is the last thumbnail, finish the slideshow
+        finishButton.click();
+    } else if (nextButton) {
         nextButton.click();
-        // Preload the next image after navigation
+        // Only preload if not finishing
         setTimeout(preloadNextImage, 1000);
     }
 }
@@ -82,6 +87,14 @@ function navigateToUndo() {
 
 // Skip to next thumbnail without marking as viewed
 function skipToNext() {
+    // Check if this is the last thumbnail by looking for finish button
+    const finishButton = document.querySelector('.nav-button.finish');
+    if (finishButton) {
+        // Can't skip the last thumbnail - just show a message
+        alert('Cannot skip the last thumbnail. Use Finish or Delete & Finish instead.');
+        return;
+    }
+    
     // Navigate to next with skip parameter (no longer need current ID)
     window.location.href = `/slideshow/next?skip=true`;
     // Preload the next image after navigation
@@ -96,10 +109,24 @@ function deleteMovie() {
         
         // Only process if the button is not disabled
         if (buttonElement && !buttonElement.disabled) {
-            submitFormAjax(form, function() {
-                // Navigate to next after marking for deletion
-                navigateToNext();
-            });
+            // Check if this is a delete-and-finish form (last thumbnail)
+            const isDeleteAndFinish = form.action.includes('delete-and-finish');
+            
+            if (isDeleteAndFinish) {
+                // For last thumbnail, submit directly (will redirect to home)
+                submitFormAjax(form, function(response) {
+                    if (response && response.redirect) {
+                        window.location.href = response.redirect;
+                    } else {
+                        window.location.href = '/';
+                    }
+                });
+            } else {
+                // For normal deletion, navigate to next
+                submitFormAjax(form, function() {
+                    navigateToNext();
+                });
+            }
         }
     }
 }
@@ -111,10 +138,25 @@ function setupAjaxForms() {
     if (deleteForm) {
         deleteForm.addEventListener('submit', function(e) {
             e.preventDefault();
-            submitFormAjax(this, function() {
-                // Navigate to next after marking for deletion
-                navigateToNext();
-            });
+            
+            // Check if this is a delete-and-finish form (last thumbnail)
+            const isDeleteAndFinish = this.action.includes('delete-and-finish');
+            
+            if (isDeleteAndFinish) {
+                // For last thumbnail, submit directly (will redirect to home)
+                submitFormAjax(this, function(response) {
+                    if (response && response.redirect) {
+                        window.location.href = response.redirect;
+                    } else {
+                        window.location.href = '/';
+                    }
+                });
+            } else {
+                // For normal deletion, navigate to next
+                submitFormAjax(this, function() {
+                    navigateToNext();
+                });
+            }
         });
     }
     
@@ -139,8 +181,18 @@ function submitFormAjax(form, callback) {
     xhr.onload = function() {
         if (xhr.status >= 200 && xhr.status < 400) {
             // Success
+            let response = null;
+            try {
+                // Try to parse JSON response
+                if (xhr.responseText) {
+                    response = JSON.parse(xhr.responseText);
+                }
+            } catch (e) {
+                // Not JSON, that's okay
+            }
+            
             if (callback) {
-                callback();
+                callback(response);
             }
         } else {
             // Error

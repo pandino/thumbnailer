@@ -90,6 +90,8 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/slideshow/previous", s.handleSlideshowPrevious).Methods("GET")
 	s.router.HandleFunc("/slideshow/mark-viewed", s.handleMarkViewed).Methods("POST")
 	s.router.HandleFunc("/slideshow/delete", s.handleDelete).Methods("POST")
+	s.router.HandleFunc("/slideshow/finish", s.handleSlideshowFinish).Methods("GET")
+	s.router.HandleFunc("/slideshow/delete-and-finish", s.handleDeleteAndFinish).Methods("POST")
 
 	// API routes
 	s.router.HandleFunc("/api/stats", s.handleStats).Methods("GET")

@@ -321,6 +321,74 @@ func (d *DB) GetRandomUnviewedThumbnail() (*models.Thumbnail, error) {
 	return thumbnail, err
 }
 
+// GetRandomUnviewedThumbnailExcluding gets a random unviewed thumbnail excluding specific IDs
+func (d *DB) GetRandomUnviewedThumbnailExcluding(excludeIDs ...int64) (*models.Thumbnail, error) {
+	// Build the exclude condition
+	excludeCondition := ""
+	excludeArgs := []interface{}{}
+
+	if len(excludeIDs) > 0 {
+		excludeCondition = " AND id NOT IN ("
+		for i, id := range excludeIDs {
+			if i > 0 {
+				excludeCondition += ", "
+			}
+			excludeCondition += "?"
+			excludeArgs = append(excludeArgs, id)
+		}
+		excludeCondition += ")"
+	}
+
+	// First, count the total number of unviewed thumbnails excluding the specified IDs
+	var count int
+	countQuery := `
+		SELECT COUNT(*) 
+		FROM thumbnails 
+		WHERE status = 'success' AND viewed = 0 AND status != 'deleted'` + excludeCondition
+
+	err := d.db.QueryRow(countQuery, excludeArgs...).Scan(&count)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count unviewed thumbnails: %w", err)
+	}
+
+	// If no unviewed thumbnails available, return nil
+	if count == 0 {
+		return nil, nil
+	}
+
+	// Generate a random offset
+	randomNum, err := rand.Int(rand.Reader, big.NewInt(int64(count)))
+	if err != nil {
+		// Fall back to math/rand if crypto/rand fails
+		offset := mathrand.Intn(count)
+		randomNum = big.NewInt(int64(offset))
+	}
+
+	// Get a random thumbnail using LIMIT and OFFSET
+	thumbnail := &models.Thumbnail{}
+	selectQuery := `
+		SELECT 
+			id, movie_path, movie_filename, thumbnail_path, 
+			created_at, updated_at, status, viewed,
+			width, height, duration, file_size, error_message, source
+		FROM thumbnails 
+		WHERE status = 'success' AND viewed = 0 AND status != 'deleted'` + excludeCondition + `
+		LIMIT 1 OFFSET ?`
+
+	selectArgs := append(excludeArgs, randomNum.Int64())
+	err = d.db.QueryRow(selectQuery, selectArgs...).Scan(
+		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
+		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.FileSize, &thumbnail.ErrorMessage, &thumbnail.Source,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	return thumbnail, err
+}
+
 // GetDeletedThumbnails retrieves thumbnails marked for deletion
 // If limit > 0, only that many items will be returned
 // If limit = 0, all matching thumbnails will be returned

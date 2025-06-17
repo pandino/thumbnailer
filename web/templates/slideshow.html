@@ -20,11 +20,19 @@
                 {{end}}
             </div>
             <div class="slideshow-actions">
+                {{if .IsLastThumbnail}}
+                <form action="/slideshow/delete-and-finish" method="post" id="delete-form">
+                    <button type="submit" class="action-icon-button danger" title="Delete movie and finish slideshow" {{if or (eq .Thumbnail.Status "deleted") .PendingDelete}}disabled{{end}}>
+                        <span class="action-icon">🗑️</span>
+                    </button>
+                </form>
+                {{else}}
                 <form action="/slideshow/delete" method="post" id="delete-form">
                     <button type="submit" class="action-icon-button danger" title="Delete movie" {{if or (eq .Thumbnail.Status "deleted") .PendingDelete}}disabled{{end}}>
                         <span class="action-icon">🗑️</span>
                     </button>
                 </form>
+                {{end}}
             </div>
         </div>
 
@@ -67,18 +75,26 @@
                 Undo
             </a>
             
-
-            
-            <a href="/slideshow/next" class="nav-button next" title="Mark as viewed and go to next random thumbnail">
-                Next (Mark as Viewed)
+            {{if .IsLastThumbnail}}
+            <a href="/slideshow/finish" class="nav-button finish" title="Mark as viewed and finish slideshow">
+                Finish
             </a>
+            {{else}}
+            <a href="/slideshow/next" class="nav-button next" title="Mark as viewed and go to next random thumbnail">
+                Next
+            </a>
+            {{end}}
         </div>
 
         <div class="keyboard-shortcuts">
             <p>
                 <span class="shortcut-group">
                     <span class="shortcut">→</span> or <span class="shortcut">Space</span>: 
+                    {{if .IsLastThumbnail}}
+                    <span class="shortcut-value">Finish (Mark as Viewed)</span>
+                    {{else}}
                     <span class="shortcut-value">Next Random (Mark as Viewed)</span>
+                    {{end}}
                 </span>
                 
                 <span class="shortcut-group">
@@ -96,6 +112,8 @@
                     <span class="shortcut">D</span>: 
                     {{if .PendingDelete}}
                     <span class="shortcut-disabled">Delete (Pending)</span>
+                    {{else if .IsLastThumbnail}}
+                    <span class="shortcut-value">Delete & Finish</span>
                     {{else}}
                     <span class="shortcut-value">Delete</span>
                     {{end}}
@@ -103,7 +121,7 @@
                 
                 <span class="shortcut-group">
                     <span class="shortcut">S</span>: 
-                    <span class="shortcut-value">Skip (No Mark as Viewed)</span>
+                    <span class="shortcut-value">Skip</span>
                 </span>
                 
                 <span class="shortcut-group">
