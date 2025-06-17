@@ -16,6 +16,31 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// formatBytes converts bytes to human readable format
+func formatBytes(bytes int64) string {
+	const (
+		B  = 1
+		KB = 1024 * B
+		MB = 1024 * KB
+		GB = 1024 * MB
+		TB = 1024 * GB
+	)
+
+	size := float64(bytes)
+	switch {
+	case bytes >= TB:
+		return fmt.Sprintf("%.2f TB", size/TB)
+	case bytes >= GB:
+		return fmt.Sprintf("%.2f GB", size/GB)
+	case bytes >= MB:
+		return fmt.Sprintf("%.2f MB", size/MB)
+	case bytes >= KB:
+		return fmt.Sprintf("%.2f KB", size/KB)
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
+
 type SessionData struct {
 	TotalImages     int   `json:"total_images"`
 	ViewedCount     int   `json:"viewed_count"`
@@ -156,19 +181,23 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 
 	// Render template with data
 	data := struct {
-		Stats              *models.Stats
-		IsScanning         bool
-		HasSession         bool
-		SessionViewedCount int
-		SessionTotalCount  int
-		Version            *VersionInfo
+		Stats                 *models.Stats
+		IsScanning            bool
+		HasSession            bool
+		SessionViewedCount    int
+		SessionTotalCount     int
+		Version               *VersionInfo
+		ViewedSizeFormatted   string
+		UnviewedSizeFormatted string
 	}{
-		Stats:              stats,
-		IsScanning:         s.scanner.IsScanning(),
-		HasSession:         hasSession,
-		SessionViewedCount: sessionViewedCount,
-		SessionTotalCount:  sessionTotalCount,
-		Version:            s.version,
+		Stats:                 stats,
+		IsScanning:            s.scanner.IsScanning(),
+		HasSession:            hasSession,
+		SessionViewedCount:    sessionViewedCount,
+		SessionTotalCount:     sessionTotalCount,
+		Version:               s.version,
+		ViewedSizeFormatted:   formatBytes(stats.ViewedSize),
+		UnviewedSizeFormatted: formatBytes(stats.UnviewedSize),
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {

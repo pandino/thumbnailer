@@ -124,6 +124,13 @@ section h2 {
     color: #777;
 }
 
+.stat-size {
+    font-size: 0.8rem;
+    color: #999;
+    font-weight: normal;
+    margin-top: 5px;
+}
+
 .stat-box.success {
     background-color: rgba(46, 204, 113, 0.1);
     border-left: 4px solid var(--success-color);

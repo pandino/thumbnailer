@@ -678,7 +678,9 @@ func (d *DB) GetStats() (*models.Stats, error) {
 			SUM(CASE WHEN status = 'success' AND viewed = 0 THEN 1 ELSE 0 END) as unviewed,
 			SUM(CASE WHEN status = 'deleted' THEN 1 ELSE 0 END) as deleted,
 			SUM(CASE WHEN source = 'generated' THEN 1 ELSE 0 END) as generated,
-			SUM(CASE WHEN source = 'imported' THEN 1 ELSE 0 END) as imported
+			SUM(CASE WHEN source = 'imported' THEN 1 ELSE 0 END) as imported,
+			COALESCE(SUM(CASE WHEN status = 'success' AND viewed = 1 THEN file_size ELSE 0 END), 0) as viewed_size,
+			COALESCE(SUM(CASE WHEN status = 'success' AND viewed = 0 THEN file_size ELSE 0 END), 0) as unviewed_size
 		FROM thumbnails
 	`).Scan(
 		&stats.Total,
@@ -690,6 +692,8 @@ func (d *DB) GetStats() (*models.Stats, error) {
 		&stats.Deleted,
 		&stats.Generated,
 		&stats.Imported,
+		&stats.ViewedSize,
+		&stats.UnviewedSize,
 	)
 
 	return stats, err

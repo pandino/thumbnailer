@@ -25,15 +25,17 @@ type Thumbnail struct {
 
 // Stats represents statistics about the thumbnails
 type Stats struct {
-	Total     int `json:"total"`
-	Success   int `json:"success"`
-	Error     int `json:"error"`
-	Pending   int `json:"pending"`
-	Viewed    int `json:"viewed"`
-	Unviewed  int `json:"unviewed"`
-	Deleted   int `json:"deleted"`
-	Generated int `json:"generated"`
-	Imported  int `json:"imported"`
+	Total        int   `json:"total"`
+	Success      int   `json:"success"`
+	Error        int   `json:"error"`
+	Pending      int   `json:"pending"`
+	Viewed       int   `json:"viewed"`
+	Unviewed     int   `json:"unviewed"`
+	Deleted      int   `json:"deleted"`
+	Generated    int   `json:"generated"`
+	Imported     int   `json:"imported"`
+	ViewedSize   int64 `json:"viewed_size"`   // Total file size of viewed movies in bytes
+	UnviewedSize int64 `json:"unviewed_size"` // Total file size of unviewed movies in bytes
 }
 
 // Constants for thumbnail status values

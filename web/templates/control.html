@@ -49,10 +49,12 @@
                     <div class="stat-box unviewed">
                         <span class="stat-value">{{.Stats.Unviewed}}</span>
                         <span class="stat-label">Unviewed</span>
+                        <span class="stat-size">{{.UnviewedSizeFormatted}}</span>
                     </div>
                     <div class="stat-box viewed">
                         <span class="stat-value">{{.Stats.Viewed}}</span>
                         <span class="stat-label">Viewed</span>
+                        <span class="stat-size">{{.ViewedSizeFormatted}}</span>
                     </div>
                     <div class="stat-box" style="background-color: rgba(231, 76, 60, 0.1); border-left: 4px solid #e74c3c;">
                         <span class="stat-value">{{.Stats.Deleted}}</span>
