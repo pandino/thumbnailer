@@ -34,7 +34,7 @@ tasks:
     desc: Build the Go executable locally
     cmds:
       - echo "Building movie-thumbnailer executable with version {{.VERSION}}"
-      - go build -ldflags "-X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X 'main.buildDate={{.BUILD_DATE}}'" -o movie-thumbnailer ./cmd/movie-thumbnailer
+      - go build -ldflags "-X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X 'main.buildDate={{.BUILD_DATE}}'" -o build/movie-thumbnailer ./cmd/movie-thumbnailer
       - echo "Built movie-thumbnailer executable successfully"
 
   clean:

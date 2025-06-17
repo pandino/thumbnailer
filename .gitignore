@@ -1,5 +1,5 @@
 migrate
-movie-thumbnailer
+build/
 movies/
 thumbnails/
 data/

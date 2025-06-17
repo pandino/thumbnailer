@@ -62,6 +62,7 @@ func main() {
 	}
 
 	log.Info("Starting Movie Thumbnailer")
+	log.Infof("Version: %s (commit: %s, built: %s)", version, commit, buildDate)
 	log.Debugf("Configuration: Movies=%s, Thumbnails=%s, Data=%s",
 		cfg.MoviesDir, cfg.ThumbnailsDir, cfg.DataDir)
 

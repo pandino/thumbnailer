@@ -663,15 +663,16 @@ func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request)
 	// Get current ID from session
 	currentID := session.CurrentID
 
-	// Check if there's a pending deletion to undo
-	if session.PendingDelete && session.PreviousID == currentID {
+	// Check if there's a pending deletion to undo - if so, always clear it regardless of current position
+	if session.PendingDelete {
 		// This is an undo operation - clear the pending deletion
 		s.log.WithFields(logrus.Fields{
-			"thumbnail": session.PreviousID,
+			"thumbnail": currentID,
 		}).Info("Undoing pending deletion")
 
 		// Clear the pending deletion from session
 		session.PendingDelete = false
+		session.PreviousID = 0 // Reset previous ID so undo button gets disabled
 
 		// Save the updated session
 		if err := s.saveSessionToCookie(w, session); err != nil {
