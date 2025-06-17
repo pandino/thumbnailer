@@ -585,6 +585,18 @@ func (d *DB) RestoreFromDeletion(moviePath string) error {
 	)
 	return err
 }
+
+// RestoreFromDeletionByID restores a thumbnail from deletion status back to success by ID
+func (d *DB) RestoreFromDeletionByID(id int64) error {
+	_, err := d.db.Exec(`
+        UPDATE thumbnails 
+        SET status = 'success', viewed = 0
+        WHERE id = ? AND status = 'deleted'`,
+		id,
+	)
+	return err
+}
+
 func (d *DB) GetStats() (*models.Stats, error) {
 	stats := &models.Stats{}
 

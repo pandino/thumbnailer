@@ -90,7 +90,7 @@ function renderThumbnails(container, thumbnails) {
                             <span>${formatDate(thumbnail.updated_at)}</span>
                         </div>
                     </div>
-                    <button class="undo-delete-btn" data-movie-path="${thumbnail.movie_path}" title="Undo deletion">↩️ Undo</button>
+                    <button class="undo-delete-btn" data-thumbnail-id="${thumbnail.id}" title="Undo deletion">↩️ Undo</button>
                 </div>
             `;
         } else {
@@ -122,15 +122,15 @@ function renderThumbnails(container, thumbnails) {
         undoButtons.forEach(button => {
             button.addEventListener('click', function(e) {
                 e.preventDefault();
-                const moviePath = this.getAttribute('data-movie-path');
-                undoDeleteMovie(moviePath, this);
+                const thumbnailId = this.getAttribute('data-thumbnail-id');
+                undoDeleteMovie(thumbnailId, this);
             });
         });
     }
 }
 
 // Add function to handle undo deletion
-function undoDeleteMovie(moviePath, buttonElement) {
+function undoDeleteMovie(thumbnailId, buttonElement) {
     // Disable the button while processing
     buttonElement.disabled = true;
     buttonElement.textContent = "Undoing...";
@@ -142,7 +142,7 @@ function undoDeleteMovie(moviePath, buttonElement) {
             'Content-Type': 'application/x-www-form-urlencoded',
             'X-Requested-With': 'XMLHttpRequest'
         },
-        body: `path=${encodeURIComponent(moviePath)}`
+        body: `id=${encodeURIComponent(thumbnailId)}`
     })
     .then(response => {
         if (!response.ok) {

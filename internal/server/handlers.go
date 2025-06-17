@@ -802,23 +802,30 @@ func (s *Server) handleMarkViewed(w http.ResponseWriter, r *http.Request) {
 
 // handleDelete marks a movie for deletion in the session (soft delete with undo capability)
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
-	// Get movie path from form
-	moviePath := r.FormValue("path")
-	if moviePath == "" {
-		http.Error(w, "Movie path is required", http.StatusBadRequest)
+	// Get thumbnail ID from form
+	thumbnailIDStr := r.FormValue("id")
+	if thumbnailIDStr == "" {
+		http.Error(w, "Thumbnail ID is required", http.StatusBadRequest)
+		return
+	}
+
+	thumbnailID, err := strconv.ParseInt(thumbnailIDStr, 10, 64)
+	if err != nil {
+		s.log.WithError(err).Error("Invalid thumbnail ID")
+		http.Error(w, "Invalid thumbnail ID", http.StatusBadRequest)
 		return
 	}
 
 	// Get the thumbnail record
-	thumbnail, err := s.db.GetByMoviePath(moviePath)
+	thumbnail, err := s.db.GetByID(thumbnailID)
 	if err != nil {
-		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to get thumbnail")
+		s.log.WithError(err).WithField("thumbnail_id", thumbnailID).Error("Failed to get thumbnail")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	if thumbnail == nil {
-		http.Error(w, "Movie not found", http.StatusNotFound)
+		http.Error(w, "Thumbnail not found", http.StatusNotFound)
 		return
 	}
 
@@ -872,8 +879,8 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.log.WithFields(logrus.Fields{
-		"movie":     moviePath,
-		"thumbnail": thumbnail.ID,
+		"movie":        thumbnail.MoviePath,
+		"thumbnail_id": thumbnail.ID,
 	}).Info("Marked movie for deletion in session (pending)")
 
 	// If ajax request, return JSON response
@@ -889,40 +896,47 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 // handleUndoDelete restores a movie that was marked for deletion
 func (s *Server) handleUndoDelete(w http.ResponseWriter, r *http.Request) {
-	// Get movie path from form
-	moviePath := r.FormValue("path")
-	if moviePath == "" {
-		http.Error(w, "Movie path is required", http.StatusBadRequest)
+	// Get thumbnail ID from form
+	thumbnailIDStr := r.FormValue("id")
+	if thumbnailIDStr == "" {
+		http.Error(w, "Thumbnail ID is required", http.StatusBadRequest)
+		return
+	}
+
+	thumbnailID, err := strconv.ParseInt(thumbnailIDStr, 10, 64)
+	if err != nil {
+		s.log.WithError(err).Error("Invalid thumbnail ID")
+		http.Error(w, "Invalid thumbnail ID", http.StatusBadRequest)
 		return
 	}
 
 	// Get the thumbnail record
-	thumbnail, err := s.db.GetByMoviePath(moviePath)
+	thumbnail, err := s.db.GetByID(thumbnailID)
 	if err != nil {
-		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to get thumbnail")
+		s.log.WithError(err).WithField("thumbnail_id", thumbnailID).Error("Failed to get thumbnail")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	if thumbnail == nil {
-		http.Error(w, "Movie not found", http.StatusNotFound)
+		http.Error(w, "Thumbnail not found", http.StatusNotFound)
 		return
 	}
 
 	// Make sure it's marked as deleted
 	if thumbnail.Status != models.StatusDeleted {
-		http.Error(w, "Movie is not marked for deletion", http.StatusBadRequest)
+		http.Error(w, "Thumbnail is not marked for deletion", http.StatusBadRequest)
 		return
 	}
 
 	// Restore the thumbnail by setting status back to success
-	if err := s.db.RestoreFromDeletion(moviePath); err != nil {
-		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to restore from deletion")
+	if err := s.db.RestoreFromDeletionByID(thumbnailID); err != nil {
+		s.log.WithError(err).WithField("thumbnail_id", thumbnailID).Error("Failed to restore from deletion")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	s.log.WithField("movie", moviePath).Info("Restored movie from deletion")
+	s.log.WithField("thumbnail_id", thumbnailID).WithField("movie", thumbnail.MoviePath).Info("Restored movie from deletion")
 
 	// If ajax request, return JSON response
 	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
