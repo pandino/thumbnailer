@@ -15,20 +15,18 @@
                 <span class="slideshow-counter">Thumbnail {{.Current}} of {{.Total}} <span class="random-indicator">Random Order</span></span>
                 {{if eq .Thumbnail.Status "deleted"}}
                 <span class="deletion-status">Deleted</span>
-                {{else if .PendingDelete}}
-                <span class="deletion-status pending">Pending Deletion (Press U to Undo)</span>
                 {{end}}
             </div>
             <div class="slideshow-actions">
                 {{if .IsLastThumbnail}}
                 <form action="/slideshow/delete-and-finish" method="post" id="delete-form">
-                    <button type="submit" class="action-icon-button danger" title="Delete movie and finish slideshow" {{if or (eq .Thumbnail.Status "deleted") .PendingDelete}}disabled{{end}}>
+                    <button type="submit" class="action-icon-button danger" title="Delete movie and finish slideshow" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
                         <span class="action-icon">🗑️</span>
                     </button>
                 </form>
                 {{else}}
                 <form action="/slideshow/delete" method="post" id="delete-form">
-                    <button type="submit" class="action-icon-button danger" title="Delete movie" {{if or (eq .Thumbnail.Status "deleted") .PendingDelete}}disabled{{end}}>
+                    <button type="submit" class="action-icon-button danger" title="Delete movie" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
                         <span class="action-icon">🗑️</span>
                     </button>
                 </form>
@@ -41,7 +39,7 @@
             <div class="source-badge imported">Imported</div>
             {{end}}
             <img src="/thumbnails/{{.Thumbnail.ThumbnailPath}}" alt="{{.Thumbnail.MovieFilename}}" 
-                class="thumbnail-image {{if or (eq .Thumbnail.Status "deleted") .PendingDelete}}pending-deletion{{end}} {{.Thumbnail.Source}}">>
+                class="thumbnail-image {{.Thumbnail.Source}}">>
         </div>
 
         <div class="movie-details">
@@ -69,9 +67,9 @@
 
         <div class="slideshow-nav">
             <a href="/slideshow/previous" 
-            class="nav-button undo{{if not .HasPrevious}} disabled{{end}}"
-            {{if not .HasPrevious}}onclick="return false;"{{end}}
-            title="Undo last action">
+            class="nav-button undo{{if and (not .HasPrevious) (not .PendingDelete)}} disabled{{end}}{{if .PendingDelete}} pending-delete{{end}}"
+            {{if and (not .HasPrevious) (not .PendingDelete)}}onclick="return false;"{{end}}
+            title="{{if .PendingDelete}}Undo Delete{{else}}Undo last action{{end}}">
                 Undo
             </a>
             
@@ -110,8 +108,8 @@
                 
                 <span class="shortcut-group">
                     <span class="shortcut">D</span>: 
-                    {{if .PendingDelete}}
-                    <span class="shortcut-disabled">Delete (Pending)</span>
+                    {{if eq .Thumbnail.Status "deleted"}}
+                    <span class="shortcut-disabled">Delete (Already Deleted)</span>
                     {{else if .IsLastThumbnail}}
                     <span class="shortcut-value">Delete & Finish</span>
                     {{else}}

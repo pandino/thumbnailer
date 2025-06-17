@@ -486,7 +486,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		Total:           session.TotalImages,
 		Current:         position,
 		HasPrevious:     session.PreviousID > 0 && session.PreviousID != session.CurrentID,
-		PendingDelete:   session.PendingDelete && session.PreviousID == thumbnail.ID,
+		PendingDelete:   session.PendingDelete,
 		IsLastThumbnail: isLastThumbnail,
 	}
 
