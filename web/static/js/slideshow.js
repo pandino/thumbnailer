@@ -82,24 +82,10 @@ function navigateToUndo() {
 
 // Skip to next thumbnail without marking as viewed
 function skipToNext() {
-    // Get current thumbnail ID
-    const currentThumbnailId = getCurrentThumbnailId();
-    if (currentThumbnailId) {
-        window.location.href = `/slideshow/next?current=${currentThumbnailId}&skip=true`;
-        // Preload the next image after navigation
-        setTimeout(preloadNextImage, 1000);
-    }
-}
-
-// Get current thumbnail ID from the page
-function getCurrentThumbnailId() {
-    // Look for the current thumbnail ID in the page - we can get it from the next button href
-    const nextButton = document.querySelector('.nav-button.next');
-    if (nextButton && nextButton.href) {
-        const url = new URL(nextButton.href);
-        return url.searchParams.get('current');
-    }
-    return null;
+    // Navigate to next with skip parameter (no longer need current ID)
+    window.location.href = `/slideshow/next?skip=true`;
+    // Preload the next image after navigation
+    setTimeout(preloadNextImage, 1000);
 }
 
 // Delete movie without confirmation

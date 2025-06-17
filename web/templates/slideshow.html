@@ -21,7 +21,6 @@
             </div>
             <div class="slideshow-actions">
                 <form action="/slideshow/delete" method="post" id="delete-form">
-                    <input type="hidden" name="id" value="{{.Thumbnail.ID}}">
                     <button type="submit" class="action-icon-button danger" title="Delete movie" {{if or (eq .Thumbnail.Status "deleted") .PendingDelete}}disabled{{end}}>
                         <span class="action-icon">🗑️</span>
                     </button>
@@ -61,7 +60,7 @@
         </div>
 
         <div class="slideshow-nav">
-            <a href="/slideshow/previous?current={{.Thumbnail.ID}}" 
+            <a href="/slideshow/previous" 
             class="nav-button undo{{if eq .BackCount 0}} disabled{{end}}"
             {{if eq .BackCount 0}}onclick="return false;"{{end}}
             title="Undo last action">
@@ -70,7 +69,7 @@
             
 
             
-            <a href="/slideshow/next?current={{.Thumbnail.ID}}" class="nav-button next" title="Mark as viewed and go to next random thumbnail">
+            <a href="/slideshow/next" class="nav-button next" title="Mark as viewed and go to next random thumbnail">
                 Next (Mark as Viewed)
             </a>
         </div>
