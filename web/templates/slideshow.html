@@ -61,8 +61,8 @@
 
         <div class="slideshow-nav">
             <a href="/slideshow/previous" 
-            class="nav-button undo{{if eq .BackCount 0}} disabled{{end}}"
-            {{if eq .BackCount 0}}onclick="return false;"{{end}}
+            class="nav-button undo{{if not .HasPrevious}} disabled{{end}}"
+            {{if not .HasPrevious}}onclick="return false;"{{end}}
             title="Undo last action">
                 Undo
             </a>
@@ -85,7 +85,7 @@
                     <span class="shortcut">U</span>: 
                     {{if .PendingDelete}}
                     <span class="shortcut-value">Undo Delete</span>
-                    {{else if gt .BackCount 0}}
+                    {{else if .HasPrevious}}
                     <span class="shortcut-value">Undo</span>
                     {{else}}
                     <span class="shortcut-disabled">Undo (No history)</span>

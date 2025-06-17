@@ -434,16 +434,6 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 	// Calculate current position in this session
 	position := session.ViewedCount + 1
 
-	// Check if we have a valid previous thumbnail for undo
-	backCount := 0
-	if session.PreviousID > 0 {
-		// Check if the previous thumbnail exists and is not deleted
-		prevThumb, err := s.db.GetByID(session.PreviousID)
-		if err == nil && prevThumb != nil && prevThumb.Status != models.StatusDeleted {
-			backCount = 1
-		}
-	}
-
 	// Parse template
 	tmpl, err := template.ParseFiles(filepath.Join(s.cfg.TemplatesDir, "slideshow.html"))
 	if err != nil {
@@ -457,14 +447,12 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		Thumbnail     *models.Thumbnail
 		Total         int
 		Current       int
-		BackCount     int
 		HasPrevious   bool
 		PendingDelete bool
 	}{
 		Thumbnail:     thumbnail,
 		Total:         session.TotalImages,
 		Current:       position,
-		BackCount:     backCount,
 		HasPrevious:   session.PreviousID > 0,
 		PendingDelete: session.PendingDelete && session.PreviousID == thumbnail.ID,
 	}
