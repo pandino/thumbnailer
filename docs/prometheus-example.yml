@@ -1,0 +1,53 @@
+# Example Prometheus configuration for Movie Thumbnailer
+# Save as prometheus.yml and run with: prometheus --config.file=prometheus.yml
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  - job_name: 'movie-thumbnailer'
+    static_configs:
+      - targets: ['localhost:8080']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    metrics_path: '/metrics'
+
+# Example alerting rules (save as movie_thumbnailer_rules.yml)
+# groups:
+#   - name: movie_thumbnailer
+#     rules:
+#       - alert: MovieThumbnailerScanFailed
+#         expr: increase(movie_thumbnailer_scan_operations_total{result="error"}[1h]) > 0
+#         for: 0m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "Movie Thumbnailer scan failed"
+#           description: "Movie thumbnailer has had {{ $value }} scan failures in the last hour."
+#
+#       - alert: MovieThumbnailerStaleScans
+#         expr: time() - movie_thumbnailer_last_scan_timestamp > 3600
+#         for: 5m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "Movie Thumbnailer scans are stale"
+#           description: "Last successful scan was {{ $value }} seconds ago."
+#
+#       - alert: MovieThumbnailerHighErrorRate
+#         expr: |
+#           (
+#             rate(movie_thumbnailer_thumbnail_generation_total{result="error"}[5m]) /
+#             rate(movie_thumbnailer_thumbnail_generation_total[5m])
+#           ) > 0.1
+#         for: 2m
+#         labels:
+#           severity: critical
+#         annotations:
+#           summary: "Movie Thumbnailer high error rate"
+#           description: "Thumbnail generation error rate is {{ $value | humanizePercentage }}."

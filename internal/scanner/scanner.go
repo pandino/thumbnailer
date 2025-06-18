@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pandino/movie-thumbnailer-go/internal/config"
 	"github.com/pandino/movie-thumbnailer-go/internal/database"
 	"github.com/pandino/movie-thumbnailer-go/internal/ffmpeg"
+	"github.com/pandino/movie-thumbnailer-go/internal/metrics"
 	"github.com/pandino/movie-thumbnailer-go/internal/models"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -22,17 +24,19 @@ type Scanner struct {
 	db          *database.DB
 	thumbnailer *ffmpeg.Thumbnailer
 	log         *logrus.Logger
+	metrics     *metrics.Metrics
 	lock        sync.Mutex
 	isScanning  bool
 }
 
 // New creates a new Scanner
-func New(cfg *config.Config, db *database.DB, log *logrus.Logger) *Scanner {
+func New(cfg *config.Config, db *database.DB, log *logrus.Logger, metrics *metrics.Metrics) *Scanner {
 	return &Scanner{
 		cfg:         cfg,
 		db:          db,
-		thumbnailer: ffmpeg.New(cfg, log),
+		thumbnailer: ffmpeg.New(cfg, log, metrics),
 		log:         log,
+		metrics:     metrics,
 		isScanning:  false,
 	}
 }
@@ -320,9 +324,17 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 	}
 
 	// Generate the thumbnail - this will now set source as 'generated'
+	start := time.Now()
 	generatedThumbnail, err := s.thumbnailer.CreateThumbnail(ctx, moviePath, s.db)
+	thumbnailDuration := time.Since(start)
+
 	if err != nil {
 		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to create thumbnail")
+
+		// Record metrics for failed generation
+		if s.metrics != nil {
+			s.metrics.RecordThumbnailGeneration("error", thumbnailDuration)
+		}
 
 		// Update status to error
 		thumbnail.Status = models.StatusError
@@ -334,6 +346,11 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 		}
 
 		return fmt.Errorf("failed to create thumbnail for movie %s: %w", moviePath, err)
+	}
+
+	// Record metrics for successful generation
+	if s.metrics != nil {
+		s.metrics.RecordThumbnailGeneration("success", thumbnailDuration)
 	}
 
 	// Update our record with the generated thumbnail data

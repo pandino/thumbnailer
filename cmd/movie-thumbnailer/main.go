@@ -80,12 +80,8 @@ func main() {
 	// Setup context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	// Initialize scanner
-	s := scanner.New(cfg, db, log)
-
-	// Initialize background worker
-	w := worker.New(cfg, s, log)
+	s := scanner.New(cfg, db, log, nil) // Will be updated with metrics later
 
 	// Create version info
 	versionInfo := &server.VersionInfo{
@@ -96,6 +92,30 @@ func main() {
 
 	// Initialize HTTP server
 	srv := server.New(cfg, db, s, log, ctx, versionInfo)
+
+	// Update scanner with metrics - recreate scanner with metrics
+	s = scanner.New(cfg, db, log, srv.GetMetrics())
+
+	// Update server's scanner reference
+	srv.UpdateScanner(s)
+
+	// Start periodic metrics updates
+	go func() {
+		ticker := time.NewTicker(30 * time.Second) // Update metrics every 30 seconds
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				srv.UpdateMetricsFromStats()
+			}
+		}
+	}()
+
+	// Initialize background worker
+	w := worker.New(cfg, s, log, srv.GetMetrics())
 
 	// Start background worker
 	go w.Start(ctx)

@@ -11,24 +11,28 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pandino/movie-thumbnailer-go/internal/config"
 	"github.com/pandino/movie-thumbnailer-go/internal/database"
+	"github.com/pandino/movie-thumbnailer-go/internal/metrics"
 	"github.com/pandino/movie-thumbnailer-go/internal/models"
 	"github.com/sirupsen/logrus"
 )
 
 // Thumbnailer creates thumbnail grids from movie files using ffmpeg
 type Thumbnailer struct {
-	cfg *config.Config
-	log *logrus.Logger
+	cfg     *config.Config
+	log     *logrus.Logger
+	metrics *metrics.Metrics
 }
 
 // New creates a new Thumbnailer
-func New(cfg *config.Config, log *logrus.Logger) *Thumbnailer {
+func New(cfg *config.Config, log *logrus.Logger, metrics *metrics.Metrics) *Thumbnailer {
 	return &Thumbnailer{
-		cfg: cfg,
-		log: log,
+		cfg:     cfg,
+		log:     log,
+		metrics: metrics,
 	}
 }
 
@@ -151,6 +155,8 @@ type FFProbeResponse struct {
 
 // GetVideoMetadata extracts metadata from a video file using JSON output format
 func (t *Thumbnailer) GetVideoMetadata(ctx context.Context, moviePath string) (*VideoMetadata, error) {
+	start := time.Now()
+
 	// Use ffprobe with JSON output format
 	cmd := exec.CommandContext(
 		ctx,
@@ -167,8 +173,18 @@ func (t *Thumbnailer) GetVideoMetadata(ctx context.Context, moviePath string) (*
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	execDuration := time.Since(start)
+
+	if err != nil {
+		if t.metrics != nil {
+			t.metrics.RecordFFmpegExecution("error", execDuration)
+		}
 		return nil, fmt.Errorf("ffprobe error: %v - %s", err, stderr.String())
+	}
+
+	if t.metrics != nil {
+		t.metrics.RecordFFmpegExecution("success", execDuration)
 	}
 
 	// Parse JSON output

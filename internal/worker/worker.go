@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/pandino/movie-thumbnailer-go/internal/config"
+	"github.com/pandino/movie-thumbnailer-go/internal/metrics"
 	"github.com/pandino/movie-thumbnailer-go/internal/scanner"
 	"github.com/sirupsen/logrus"
 )
@@ -15,14 +16,16 @@ type Worker struct {
 	cfg     *config.Config
 	scanner *scanner.Scanner
 	log     *logrus.Logger
+	metrics *metrics.Metrics
 }
 
 // New creates a new Worker
-func New(cfg *config.Config, scanner *scanner.Scanner, log *logrus.Logger) *Worker {
+func New(cfg *config.Config, scanner *scanner.Scanner, log *logrus.Logger, metrics *metrics.Metrics) *Worker {
 	return &Worker{
 		cfg:     cfg,
 		scanner: scanner,
 		log:     log,
+		metrics: metrics,
 	}
 }
 
@@ -33,11 +36,23 @@ func (w *Worker) Start(ctx context.Context) {
 	// Perform an initial scan at startup
 	go func() {
 		w.log.Info("Running initial scan")
+		start := time.Now()
+
 		// Create a child context that can be cancelled either by the worker context or app shutdown
 		scanCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
+
 		if err := w.scanner.ScanMovies(scanCtx); err != nil {
 			w.log.WithError(err).Error("Initial scan failed")
+			if w.metrics != nil {
+				w.metrics.RecordScanOperation("error", time.Since(start))
+				w.metrics.RecordBackgroundTask("initial_scan", "error")
+			}
+		} else {
+			if w.metrics != nil {
+				w.metrics.RecordScanOperation("success", time.Since(start))
+				w.metrics.RecordBackgroundTask("initial_scan", "success")
+			}
 		}
 	}()
 
@@ -63,11 +78,23 @@ func (w *Worker) Start(ctx context.Context) {
 			}
 
 			w.log.Info("Running scheduled scan")
+			start := time.Now()
+
 			// Create a child context for each scan operation
 			scanCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
+
 			if err := w.scanner.ScanMovies(scanCtx); err != nil {
 				w.log.WithError(err).Error("Scheduled scan failed")
+				if w.metrics != nil {
+					w.metrics.RecordScanOperation("error", time.Since(start))
+					w.metrics.RecordBackgroundTask("scheduled_scan", "error")
+				}
+			} else {
+				if w.metrics != nil {
+					w.metrics.RecordScanOperation("success", time.Since(start))
+					w.metrics.RecordBackgroundTask("scheduled_scan", "success")
+				}
 			}
 		case <-cleanupTicker.C:
 			// Skip if deletion is disabled
@@ -83,11 +110,23 @@ func (w *Worker) Start(ctx context.Context) {
 			}
 
 			w.log.Info("Running scheduled cleanup")
+			start := time.Now()
+
 			// Create a child context for each cleanup operation
 			cleanupCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
+
 			if err := w.scanner.CleanupOrphans(cleanupCtx); err != nil {
 				w.log.WithError(err).Error("Scheduled cleanup failed")
+				if w.metrics != nil {
+					w.metrics.RecordBackgroundTask("cleanup", "error")
+				}
+			} else {
+				duration := time.Since(start)
+				if w.metrics != nil {
+					w.metrics.RecordBackgroundTask("cleanup", "success")
+				}
+				w.log.WithField("duration", duration).Info("Scheduled cleanup completed")
 			}
 		}
 	}
@@ -102,11 +141,23 @@ func (w *Worker) PerformScan(ctx context.Context) error {
 
 	w.log.Info("Triggering manual scan")
 	go func() {
+		start := time.Now()
+
 		// Create a child context that will be cancelled either by the provided context or app shutdown
 		scanCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
+
 		if err := w.scanner.ScanMovies(scanCtx); err != nil {
 			w.log.WithError(err).Error("Manual scan failed")
+			if w.metrics != nil {
+				w.metrics.RecordScanOperation("error", time.Since(start))
+				w.metrics.RecordBackgroundTask("manual_scan", "error")
+			}
+		} else {
+			if w.metrics != nil {
+				w.metrics.RecordScanOperation("success", time.Since(start))
+				w.metrics.RecordBackgroundTask("manual_scan", "success")
+			}
 		}
 	}()
 

@@ -9,7 +9,9 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/pandino/movie-thumbnailer-go/internal/config"
 	"github.com/pandino/movie-thumbnailer-go/internal/database"
+	"github.com/pandino/movie-thumbnailer-go/internal/metrics"
 	"github.com/pandino/movie-thumbnailer-go/internal/scanner"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 )
 
@@ -30,6 +32,7 @@ type Server struct {
 	router  *mux.Router
 	appCtx  context.Context
 	version *VersionInfo
+	metrics *metrics.Metrics
 }
 
 // New creates a new Server
@@ -42,6 +45,7 @@ func New(cfg *config.Config, db *database.DB, scanner *scanner.Scanner, log *log
 		router:  mux.NewRouter(),
 		appCtx:  appCtx,
 		version: version,
+		metrics: metrics.New(),
 	}
 
 	// Initialize routes
@@ -108,11 +112,14 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/api/thumbnails/{id}", s.handleThumbnail).Methods("GET")
 	s.router.HandleFunc("/api/slideshow/next-image", s.handleSlideshowNextImage).Methods("GET")
 
+	// Metrics endpoint
+	s.router.Handle("/metrics", promhttp.Handler()).Methods("GET")
+
 	// 404 handler
 	s.router.NotFoundHandler = http.HandlerFunc(s.handleNotFound)
 }
 
-// loggingMiddleware logs HTTP requests
+// loggingMiddleware logs HTTP requests and records metrics
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -123,12 +130,31 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		// Call the next handler
 		next.ServeHTTP(ww, r)
 
+		// Calculate duration
+		duration := time.Since(start)
+
+		// Get the matched route for better endpoint grouping
+		var route *mux.Route
+		var endpoint string
+		if route = mux.CurrentRoute(r); route != nil {
+			if template, err := route.GetPathTemplate(); err == nil {
+				endpoint = template
+			} else {
+				endpoint = r.URL.Path
+			}
+		} else {
+			endpoint = r.URL.Path
+		}
+
+		// Record metrics
+		s.metrics.RecordHTTPRequest(r.Method, endpoint, fmt.Sprintf("%d", ww.Status()), duration)
+
 		// Log the request
 		s.log.WithFields(logrus.Fields{
 			"method":     r.Method,
 			"path":       r.URL.Path,
 			"status":     ww.Status(),
-			"duration":   time.Since(start),
+			"duration":   duration,
 			"user-agent": r.UserAgent(),
 			"remote":     r.RemoteAddr,
 		}).Info("HTTP request")
@@ -171,4 +197,29 @@ func (w *WrappedResponseWriter) WriteHeader(code int) {
 // Status returns the HTTP status code
 func (w *WrappedResponseWriter) Status() int {
 	return w.statusCode
+}
+
+// GetMetrics returns the metrics instance for use by other components
+func (s *Server) GetMetrics() *metrics.Metrics {
+	return s.metrics
+}
+
+// UpdateScanner updates the scanner reference in the server
+func (s *Server) UpdateScanner(scanner *scanner.Scanner) {
+	s.scanner = scanner
+}
+
+// UpdateMetricsFromStats updates Prometheus metrics with current database stats
+func (s *Server) UpdateMetricsFromStats() {
+	stats, err := s.db.GetStats()
+	if err != nil {
+		s.log.WithError(err).Error("Failed to get database stats for metrics")
+		return
+	}
+
+	// Update thumbnail counts
+	s.metrics.UpdateThumbnailCounts(stats.Success, stats.Error, stats.Pending, stats.Deleted)
+
+	// Update file sizes
+	s.metrics.UpdateFileSizes(stats.ViewedSize, stats.UnviewedSize)
 }

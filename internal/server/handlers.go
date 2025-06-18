@@ -807,6 +807,9 @@ func (s *Server) handleMarkViewed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Record view in metrics
+	s.metrics.RecordSlideshowView()
+
 	// Update session viewed count
 	session.ViewedCount++
 
@@ -1160,6 +1163,12 @@ func (s *Server) handleSlideshowFinish(w http.ResponseWriter, r *http.Request) {
 
 	s.log.WithField("thumbnail_id", currentID).Info("Marked last thumbnail as viewed and finishing slideshow")
 
+	// Record slideshow session metrics
+	if session.StartedAt > 0 {
+		sessionDuration := time.Since(time.Unix(session.StartedAt, 0))
+		s.metrics.RecordSlideshowSession("completed", sessionDuration)
+	}
+
 	// Clear the session cookie to end the slideshow
 	http.SetCookie(w, &http.Cookie{
 		Name:    "slideshow_session",
@@ -1223,6 +1232,12 @@ func (s *Server) handleDeleteAndFinish(w http.ResponseWriter, r *http.Request) {
 		"file_size":          thumbnail.FileSize,
 		"total_deleted_size": session.DeletedSize,
 	}).Info("Marked last thumbnail for deletion and finishing slideshow")
+
+	// Record slideshow session metrics
+	if session.StartedAt > 0 {
+		sessionDuration := time.Since(time.Unix(session.StartedAt, 0))
+		s.metrics.RecordSlideshowSession("deleted_and_completed", sessionDuration)
+	}
 
 	// Clear the session cookie to end the slideshow
 	http.SetCookie(w, &http.Cookie{
