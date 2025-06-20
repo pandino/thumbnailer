@@ -39,6 +39,10 @@ type Metrics struct {
 	// FFmpeg metrics
 	FFmpegExecutionsTotal *prometheus.CounterVec
 	FFmpegDuration        prometheus.Histogram
+
+	// Cleanup metrics
+	CleanupDeletedMoviesTotal *prometheus.CounterVec
+	CleanupDeletedMoviesSize  *prometheus.CounterVec
 }
 
 // New creates and registers all Prometheus metrics
@@ -174,6 +178,22 @@ func New() *Metrics {
 				Buckets: []float64{0.5, 1, 2, 5, 10, 30, 60}, // Custom buckets for FFmpeg
 			},
 		),
+
+		// Cleanup metrics
+		CleanupDeletedMoviesTotal: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "movie_thumbnailer_cleanup_deleted_movies_total",
+				Help: "Total number of movies deleted during cleanup operations",
+			},
+			[]string{"operation_type"},
+		),
+		CleanupDeletedMoviesSize: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "movie_thumbnailer_cleanup_deleted_movies_size_bytes_total",
+				Help: "Total size in bytes of movies deleted during cleanup operations",
+			},
+			[]string{"operation_type"},
+		),
 	}
 }
 
@@ -225,6 +245,12 @@ func (m *Metrics) RecordFFmpegExecution(result string, duration time.Duration) {
 	m.FFmpegDuration.Observe(duration.Seconds())
 }
 
+// RecordCleanupDeletedMovies records metrics for deleted movies during cleanup
+func (m *Metrics) RecordCleanupDeletedMovies(result string, size int64) {
+	m.CleanupDeletedMoviesTotal.WithLabelValues(result).Inc()
+	m.CleanupDeletedMoviesSize.WithLabelValues(result).Add(float64(size))
+}
+
 // UpdateThumbnailCounts updates the thumbnail count metrics
 func (m *Metrics) UpdateThumbnailCounts(success, error, pending, deleted int) {
 	m.ThumbnailsTotal.WithLabelValues("success").Set(float64(success))
@@ -237,4 +263,10 @@ func (m *Metrics) UpdateThumbnailCounts(success, error, pending, deleted int) {
 func (m *Metrics) UpdateFileSizes(viewedSize, unviewedSize int64) {
 	m.TotalFileSize.WithLabelValues("viewed").Set(float64(viewedSize))
 	m.TotalFileSize.WithLabelValues("unviewed").Set(float64(unviewedSize))
+}
+
+// RecordCleanupDeletedMovie records metrics for movies deleted during cleanup
+func (m *Metrics) RecordCleanupDeletedMovie(operationType string, fileSize int64) {
+	m.CleanupDeletedMoviesTotal.WithLabelValues(operationType).Inc()
+	m.CleanupDeletedMoviesSize.WithLabelValues(operationType).Add(float64(fileSize))
 }

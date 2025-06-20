@@ -84,6 +84,17 @@ This document describes the Prometheus metrics exposed by the Movie Thumbnailer 
   - Custom buckets: [0.5, 1, 2, 5, 10, 30, 60] seconds
   - Useful for monitoring FFmpeg performance
 
+### Cleanup Metrics
+- **`movie_thumbnailer_cleanup_deleted_movies_total`** (Counter with label: operation_type)
+  - Total number of movies deleted during cleanup operations
+  - Operation types: deletion_queue, missing_files
+  - Useful for monitoring data cleanup and storage optimization
+
+- **`movie_thumbnailer_cleanup_deleted_movies_size_bytes_total`** (Counter with label: operation_type)
+  - Total size in bytes of movies deleted during cleanup operations
+  - Operation types: deletion_queue, missing_files
+  - Useful for monitoring storage space reclaimed during cleanup
+
 ## Usage Examples
 
 ### Monitoring Dashboard Queries
@@ -106,6 +117,16 @@ rate(movie_thumbnailer_http_request_duration_seconds_sum[5m]) / rate(movie_thumb
 **Storage Usage:**
 ```promql
 movie_thumbnailer_total_file_size_bytes
+```
+
+**Cleanup Activity:**
+```promql
+rate(movie_thumbnailer_cleanup_deleted_movies_total[5m])
+```
+
+**Storage Reclaimed:**
+```promql
+rate(movie_thumbnailer_cleanup_deleted_movies_size_bytes_total[5m])
 ```
 
 ### Alerting Rules

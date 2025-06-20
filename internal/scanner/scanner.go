@@ -408,6 +408,7 @@ func (s *Scanner) CleanupOrphans(ctx context.Context) error {
 	}
 
 	var orphanedCount, missingCount int
+	var missingMoviesSize int64
 
 	// Check each thumbnail
 	for i, thumbnail := range thumbnails {
@@ -431,6 +432,10 @@ func (s *Scanner) CleanupOrphans(ctx context.Context) error {
 		if _, err := os.Stat(moviePath); os.IsNotExist(err) {
 			s.log.WithField("movie", moviePath).Info("Movie file not found, removing from database")
 
+			// Track metrics for missing movie
+			missingMoviesSize += thumbnail.FileSize
+			s.metrics.RecordCleanupDeletedMovie("missing_files", thumbnail.FileSize)
+
 			// Delete the thumbnail if it exists
 			if thumbnail.ThumbnailPath != "" {
 				thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, thumbnail.ThumbnailPath)
@@ -453,7 +458,7 @@ func (s *Scanner) CleanupOrphans(ctx context.Context) error {
 		}
 	}
 
-	s.log.Infof("Cleanup completed: removed %d database entries for missing movies and deleted %d orphaned thumbnails", missingCount, orphanedCount)
+	s.log.Infof("Cleanup completed: removed %d database entries for missing movies (total size: %d bytes) and deleted %d orphaned thumbnails", missingCount, missingMoviesSize, orphanedCount)
 
 	// Check context before continuing
 	select {
@@ -539,6 +544,9 @@ func (s *Scanner) processDeletedItems(ctx context.Context) error {
 
 	s.log.Infof("Processing %d items marked for deletion", len(thumbnails))
 
+	var deletedCount int
+	var deletedSize int64
+
 	for i, thumbnail := range thumbnails {
 		// Check for context cancellation periodically
 		if i%10 == 0 {
@@ -571,6 +579,11 @@ func (s *Scanner) processDeletedItems(ctx context.Context) error {
 				continue
 			}
 			s.log.WithField("movie", fullMoviePath).Info("Deleted movie file")
+
+			// Track metrics for successfully deleted movie
+			deletedCount++
+			deletedSize += thumbnail.FileSize
+			s.metrics.RecordCleanupDeletedMovie("deletion_queue", thumbnail.FileSize)
 		}
 
 		// Remove from database
@@ -579,6 +592,7 @@ func (s *Scanner) processDeletedItems(ctx context.Context) error {
 		}
 	}
 
+	s.log.Infof("Deleted %d movies with total size of %d bytes from deletion queue", deletedCount, deletedSize)
 	return nil
 }
 
