@@ -160,29 +160,33 @@ func (s *Scanner) findMovieFiles(ctx context.Context) ([]string, error) {
 		// Continue processing
 	}
 
-	// Walk the directory and find movie files
-	err := filepath.Walk(s.cfg.MoviesDir, func(path string, info os.FileInfo, err error) error {
-		// Periodically check for context cancellation
+	// Read only the direct contents of the movies directory (no recursion)
+	entries, err := os.ReadDir(s.cfg.MoviesDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read movies directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		// Check for context cancellation
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		default:
 			// Continue processing
 		}
 
-		if err != nil {
-			return err
+		// Skip directories - only process files in the root movies directory
+		if entry.IsDir() {
+			continue
 		}
 
-		// Skip directories
-		if info.IsDir() {
-			return nil
-		}
+		// Get full path to the file
+		path := filepath.Join(s.cfg.MoviesDir, entry.Name())
 
 		// Check file extension
-		ext := strings.ToLower(filepath.Ext(path))
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
 		if ext == "" {
-			return nil
+			continue
 		}
 
 		// Remove the dot from extension
@@ -195,9 +199,7 @@ func (s *Scanner) findMovieFiles(ctx context.Context) ([]string, error) {
 				break
 			}
 		}
-
-		return nil
-	})
+	}
 
 	return movieFiles, err
 }
