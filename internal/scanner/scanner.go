@@ -108,8 +108,8 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 			continue
 		}
 
-		// Skip if thumbnail already exists and is successful
-		if thumbnail != nil && thumbnail.Status == "success" {
+		// Skip if thumbnail already exists and is successful, or if it's marked for deletion
+		if thumbnail != nil && (thumbnail.Status == "success" || thumbnail.Status == "deleted") {
 			continue
 		}
 
