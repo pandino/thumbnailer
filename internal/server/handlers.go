@@ -722,10 +722,22 @@ func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request)
 
 	// Check if there's a pending deletion to undo - if so, always clear it regardless of current position
 	if session.PendingDelete {
-		// This is an undo operation - clear the pending deletion
+		// This is an undo operation - clear the pending deletion and navigate back to deleted thumbnail
+		deletedThumbnailID := session.PreviousID
+
 		s.log.WithFields(logrus.Fields{
-			"thumbnail": currentID,
+			"thumbnail": deletedThumbnailID,
 		}).Info("Undoing pending deletion")
+
+		// Verify the deleted thumbnail still exists and is not permanently deleted
+		if deletedThumbnailID > 0 {
+			deletedThumbnail, err := s.db.GetByID(deletedThumbnailID)
+			if err == nil && deletedThumbnail != nil && deletedThumbnail.Status != models.StatusDeleted {
+				// Navigate back to the previously deleted thumbnail
+				session.CurrentID = deletedThumbnailID
+				session.NextID = currentID // Save current thumbnail as next for navigation coordination
+			}
+		}
 
 		// Clear the pending deletion from session
 		session.PendingDelete = false
@@ -736,7 +748,7 @@ func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request)
 			s.log.WithError(err).Error("Failed to save session after undo")
 		}
 
-		// Stay on the current thumbnail (reload without delete flag)
+		// Redirect to slideshow (will show the restored thumbnail)
 		s.redirectToSlideshow(w, r)
 		return
 	}
