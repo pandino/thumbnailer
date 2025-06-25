@@ -1,0 +1,160 @@
+time="2025-06-25T22:21:10+02:00" level=info msg="Starting Movie Thumbnailer"
+time="2025-06-25T22:21:10+02:00" level=info msg="Version: 0.0.0 (commit: none, built: unknown)"
+time="2025-06-25T22:21:10+02:00" level=debug msg="Configuration: Movies=./test_data/movies, Thumbnails=./test_data/thumbnails, Data=./test_data/data"
+time="2025-06-25T22:21:10+02:00" level=info msg="Starting background worker"
+time="2025-06-25T22:21:10+02:00" level=info msg="Running initial scan"
+time="2025-06-25T22:21:10+02:00" level=info msg="Starting movie scan"
+time="2025-06-25T22:21:10+02:00" level=info msg="Found 20 movie files"
+time="2025-06-25T22:21:10+02:00" level=info msg="Cleaning up orphaned entries, thumbnails, and processing deletion queue"
+time="2025-06-25T22:21:10+02:00" level=info msg="Starting server on 0.0.0.0:8080"
+time="2025-06-25T22:21:10+02:00" level=debug msg="Skipping deletion processing because deletion is disabled"
+time="2025-06-25T22:21:10+02:00" level=info msg="Cleanup completed: removed 0 database entries for missing movies (total size: 0 bytes) and deleted 0 orphaned thumbnails"
+time="2025-06-25T22:21:10+02:00" level=info msg="Thumbnail cleanup completed: deleted 0 orphaned thumbnail files"
+time="2025-06-25T22:21:10+02:00" level=info msg="Movie scan completed successfully"
+time="2025-06-25T22:21:28+02:00" level=info msg="HTTP request" duration=4.54826ms method=GET path=/ remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:21:29+02:00" level=info msg="HTTP request" duration="530.123µs" method=GET path=/api/thumbnails remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:21:32+02:00" level=info msg="Slideshow request received" newSession=true url="/slideshow?new=true"
+time="2025-06-25T22:21:32+02:00" level=info msg="Created new session with CurrentID=0, ViewedCount=0, NavigationCount=0, PreviousID=0, NextID=0"
+time="2025-06-25T22:21:32+02:00" level=info msg="No targetID, getting random unviewed thumbnail"
+time="2025-06-25T22:21:32+02:00" level=info msg="Before session update check" newSession=true sessionCurrentID=0 sessionNavigationCount=0 sessionPreviousID=0 sessionViewedCount=0 thumbnailID=10
+time="2025-06-25T22:21:32+02:00" level=info msg="New session: setting first thumbnail without incrementing counters"
+time="2025-06-25T22:21:32+02:00" level=info msg="Updating session" newCurrentID=10 newNavigationCount=0 newPreviousID=0 newViewedCount=0
+time="2025-06-25T22:21:32+02:00" level=info msg="Pre-determined next thumbnail for prefetch coordination" context=slideshow_display nextID=11
+time="2025-06-25T22:21:32+02:00" level=info msg="Last thumbnail check" currentThumbnailID=10 err="<nil>" excludeForCount="[10]" isLastThumbnail=false previousThumbnailID=0 remainingThumbnail=17
+time="2025-06-25T22:21:32+02:00" level=info msg="HTTP request" duration=11.353471ms method=GET path=/slideshow remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:21:33+02:00" level=info msg="Using predetermined next thumbnail for prefetch" movieFilename=video_07.mp4 nextID=11 thumbnailPath=video_07.jpg
+time="2025-06-25T22:21:33+02:00" level=debug msg="Providing next image for prefetch" movieFilename=video_07.mp4 thumbnailPath=video_07.jpg
+time="2025-06-25T22:21:33+02:00" level=info msg="HTTP request" duration=1.009144ms method=GET path=/api/slideshow/next-image remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:21:35+02:00" level=info msg="Using predetermined next thumbnail (coordinated with prefetcher)" movieFilename=video_07.mp4 nextID=11 thumbnailPath=video_07.jpg
+time="2025-06-25T22:21:35+02:00" level=debug msg="Pre-determined next thumbnail for prefetch coordination" currentID=11 nextID=25
+time="2025-06-25T22:21:35+02:00" level=info msg="HTTP request" duration=5.383301ms method=GET path=/slideshow/next remote="[::1]:52724" status=303 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:21:35+02:00" level=info msg="Slideshow request received" newSession=false url=/slideshow
+time="2025-06-25T22:21:35+02:00" level=info msg="Attempting to get thumbnail by ID" targetID=11
+time="2025-06-25T22:21:35+02:00" level=info msg="Successfully found thumbnail by ID" foundThumbnailID=11
+time="2025-06-25T22:21:35+02:00" level=info msg="Before session update check" newSession=false sessionCurrentID=11 sessionNavigationCount=1 sessionPreviousID=10 sessionViewedCount=0 thumbnailID=11
+time="2025-06-25T22:21:35+02:00" level=info msg="No session update needed"
+time="2025-06-25T22:21:35+02:00" level=info msg="Last thumbnail check" currentThumbnailID=11 err="<nil>" excludeForCount="[11 10]" isLastThumbnail=false previousThumbnailID=10 remainingThumbnail=14
+time="2025-06-25T22:21:35+02:00" level=info msg="HTTP request" duration=3.787458ms method=GET path=/slideshow remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:21:36+02:00" level=info msg="Using predetermined next thumbnail for prefetch" movieFilename=video_18.mp4 nextID=25 thumbnailPath=video_18.jpg
+time="2025-06-25T22:21:36+02:00" level=debug msg="Providing next image for prefetch" movieFilename=video_18.mp4 thumbnailPath=video_18.jpg
+time="2025-06-25T22:21:36+02:00" level=info msg="HTTP request" duration="921.104µs" method=GET path=/api/slideshow/next-image remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:21:36+02:00" level=info msg="HTTP request" duration="181.933µs" method=GET path=/thumbnails/video_18.jpg remote="[::1]:52724" status=304 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:21:37+02:00" level=info msg="*** DELETE HANDLER CALLED ***"
+time="2025-06-25T22:21:37+02:00" level=info msg="Delete handler - current session state" sessionPendingDelete=false sessionPreviousID=10 thumbnailID=11
+time="2025-06-25T22:21:37+02:00" level=info msg="Delete handler - checking if previous thumbnail should be marked as viewed" condition1=true condition2=true previousID=10 thumbnailID=11
+time="2025-06-25T22:21:37+02:00" level=info msg="Marking previous thumbnail as viewed before setting up deletion" previousID=10 thumbnailID=11
+time="2025-06-25T22:21:37+02:00" level=info msg="Marked previous thumbnail as viewed before deletion" thumbnail_id=10
+time="2025-06-25T22:21:37+02:00" level=info msg="Marked movie for deletion in session (pending)" movie=video_07.mp4 thumbnail_id=11
+time="2025-06-25T22:21:37+02:00" level=info msg="HTTP request" duration=9.426519ms method=POST path=/slideshow/delete remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:21:37+02:00" level=info msg="Using predetermined next thumbnail (coordinated with prefetcher)" movieFilename=video_18.mp4 nextID=25 thumbnailPath=video_18.jpg
+time="2025-06-25T22:21:37+02:00" level=debug msg="Pre-determined next thumbnail for prefetch coordination" currentID=25 nextID=7
+time="2025-06-25T22:21:37+02:00" level=info msg="HTTP request" duration=6.875025ms method=GET path=/slideshow/next remote="[::1]:52724" status=303 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:21:37+02:00" level=info msg="Slideshow request received" newSession=false url=/slideshow
+time="2025-06-25T22:21:37+02:00" level=info msg="Attempting to get thumbnail by ID" targetID=25
+time="2025-06-25T22:21:37+02:00" level=info msg="Successfully found thumbnail by ID" foundThumbnailID=25
+time="2025-06-25T22:21:37+02:00" level=info msg="Before session update check" newSession=false sessionCurrentID=25 sessionNavigationCount=2 sessionPreviousID=11 sessionViewedCount=1 thumbnailID=25
+time="2025-06-25T22:21:37+02:00" level=info msg="No session update needed"
+time="2025-06-25T22:21:37+02:00" level=info msg="Last thumbnail check" currentThumbnailID=25 err="<nil>" excludeForCount="[25 11]" isLastThumbnail=false previousThumbnailID=11 remainingThumbnail=9
+time="2025-06-25T22:21:37+02:00" level=info msg="HTTP request" duration=2.022532ms method=GET path=/slideshow remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:21:38+02:00" level=info msg="Using predetermined next thumbnail for prefetch" movieFilename=video_04.mp4 nextID=7 thumbnailPath=video_04.jpg
+time="2025-06-25T22:21:38+02:00" level=debug msg="Providing next image for prefetch" movieFilename=video_04.mp4 thumbnailPath=video_04.jpg
+time="2025-06-25T22:21:38+02:00" level=info msg="HTTP request" duration="662.755µs" method=GET path=/api/slideshow/next-image remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:14+02:00" level=info msg="HTTP request" duration=5.502458ms method=GET path=/ remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:14+02:00" level=info msg="HTTP request" duration="655.417µs" method=GET path=/api/thumbnails remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:18+02:00" level=info msg="Resetting viewed status for all thumbnails"
+time="2025-06-25T22:22:18+02:00" level=info msg="Reset viewed status for 1 thumbnails"
+time="2025-06-25T22:22:18+02:00" level=info msg="HTTP request" duration=13.457287ms method=POST path=/reset-views remote="[::1]:52724" status=303 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:18+02:00" level=info msg="HTTP request" duration=3.022657ms method=GET path=/ remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:18+02:00" level=info msg="HTTP request" duration=1.03686ms method=GET path=/api/thumbnails remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:24+02:00" level=info msg="Slideshow request received" newSession=true url="/slideshow?new=true"
+time="2025-06-25T22:22:24+02:00" level=info msg="Created new session with CurrentID=0, ViewedCount=0, NavigationCount=0, PreviousID=0, NextID=0"
+time="2025-06-25T22:22:24+02:00" level=info msg="No targetID, getting random unviewed thumbnail"
+time="2025-06-25T22:22:24+02:00" level=info msg="Before session update check" newSession=true sessionCurrentID=0 sessionNavigationCount=0 sessionPreviousID=0 sessionViewedCount=0 thumbnailID=20
+time="2025-06-25T22:22:24+02:00" level=info msg="New session: setting first thumbnail without incrementing counters"
+time="2025-06-25T22:22:24+02:00" level=info msg="Updating session" newCurrentID=20 newNavigationCount=0 newPreviousID=0 newViewedCount=0
+time="2025-06-25T22:22:24+02:00" level=info msg="Pre-determined next thumbnail for prefetch coordination" context=slideshow_display nextID=24
+time="2025-06-25T22:22:24+02:00" level=info msg="Last thumbnail check" currentThumbnailID=20 err="<nil>" excludeForCount="[20]" isLastThumbnail=false previousThumbnailID=0 remainingThumbnail=24
+time="2025-06-25T22:22:24+02:00" level=info msg="HTTP request" duration=7.101773ms method=GET path=/slideshow remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:25+02:00" level=info msg="Using predetermined next thumbnail for prefetch" movieFilename=video_19.mp4 nextID=24 thumbnailPath=video_19.jpg
+time="2025-06-25T22:22:25+02:00" level=debug msg="Providing next image for prefetch" movieFilename=video_19.mp4 thumbnailPath=video_19.jpg
+time="2025-06-25T22:22:25+02:00" level=info msg="HTTP request" duration="271.867µs" method=GET path=/api/slideshow/next-image remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:27+02:00" level=info msg="Using predetermined next thumbnail (coordinated with prefetcher)" movieFilename=video_19.mp4 nextID=24 thumbnailPath=video_19.jpg
+time="2025-06-25T22:22:27+02:00" level=debug msg="Pre-determined next thumbnail for prefetch coordination" currentID=24 nextID=9
+time="2025-06-25T22:22:27+02:00" level=info msg="HTTP request" duration=6.728609ms method=GET path=/slideshow/next remote="[::1]:52724" status=303 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:27+02:00" level=info msg="Slideshow request received" newSession=false url=/slideshow
+time="2025-06-25T22:22:27+02:00" level=info msg="Attempting to get thumbnail by ID" targetID=24
+time="2025-06-25T22:22:27+02:00" level=info msg="Successfully found thumbnail by ID" foundThumbnailID=24
+time="2025-06-25T22:22:27+02:00" level=info msg="Before session update check" newSession=false sessionCurrentID=24 sessionNavigationCount=1 sessionPreviousID=20 sessionViewedCount=0 thumbnailID=24
+time="2025-06-25T22:22:27+02:00" level=info msg="No session update needed"
+time="2025-06-25T22:22:27+02:00" level=info msg="Last thumbnail check" currentThumbnailID=24 err="<nil>" excludeForCount="[24 20]" isLastThumbnail=false previousThumbnailID=20 remainingThumbnail=17
+time="2025-06-25T22:22:27+02:00" level=info msg="HTTP request" duration=3.704997ms method=GET path=/slideshow remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:28+02:00" level=info msg="Using predetermined next thumbnail for prefetch" movieFilename=video_05.mp4 nextID=9 thumbnailPath=video_05.jpg
+time="2025-06-25T22:22:28+02:00" level=debug msg="Providing next image for prefetch" movieFilename=video_05.mp4 thumbnailPath=video_05.jpg
+time="2025-06-25T22:22:28+02:00" level=info msg="HTTP request" duration=1.038637ms method=GET path=/api/slideshow/next-image remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:31+02:00" level=info msg="*** DELETE HANDLER CALLED ***"
+time="2025-06-25T22:22:31+02:00" level=info msg="Delete handler - current session state" sessionPendingDelete=false sessionPreviousID=20 thumbnailID=24
+time="2025-06-25T22:22:31+02:00" level=info msg="Delete handler - checking if previous thumbnail should be marked as viewed" condition1=true condition2=true previousID=20 thumbnailID=24
+time="2025-06-25T22:22:31+02:00" level=info msg="Marking previous thumbnail as viewed before setting up deletion" previousID=20 thumbnailID=24
+time="2025-06-25T22:22:31+02:00" level=info msg="Marked previous thumbnail as viewed before deletion" thumbnail_id=20
+time="2025-06-25T22:22:31+02:00" level=info msg="Marked movie for deletion in session (pending)" movie=video_19.mp4 thumbnail_id=24
+time="2025-06-25T22:22:31+02:00" level=info msg="HTTP request" duration=8.944534ms method=POST path=/slideshow/delete remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:31+02:00" level=info msg="Using predetermined next thumbnail (coordinated with prefetcher)" movieFilename=video_05.mp4 nextID=9 thumbnailPath=video_05.jpg
+time="2025-06-25T22:22:31+02:00" level=debug msg="Pre-determined next thumbnail for prefetch coordination" currentID=9 nextID=13
+time="2025-06-25T22:22:31+02:00" level=info msg="HTTP request" duration=11.453573ms method=GET path=/slideshow/next remote="[::1]:52724" status=303 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:31+02:00" level=info msg="Slideshow request received" newSession=false url=/slideshow
+time="2025-06-25T22:22:31+02:00" level=info msg="Attempting to get thumbnail by ID" targetID=9
+time="2025-06-25T22:22:31+02:00" level=info msg="Successfully found thumbnail by ID" foundThumbnailID=9
+time="2025-06-25T22:22:31+02:00" level=info msg="Before session update check" newSession=false sessionCurrentID=9 sessionNavigationCount=2 sessionPreviousID=24 sessionViewedCount=1 thumbnailID=9
+time="2025-06-25T22:22:31+02:00" level=info msg="No session update needed"
+time="2025-06-25T22:22:31+02:00" level=info msg="Last thumbnail check" currentThumbnailID=9 err="<nil>" excludeForCount="[9 24]" isLastThumbnail=false previousThumbnailID=24 remainingThumbnail=17
+time="2025-06-25T22:22:31+02:00" level=info msg="HTTP request" duration=6.030588ms method=GET path=/slideshow remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:33+02:00" level=info msg="Using predetermined next thumbnail for prefetch" movieFilename=video_09.mp4 nextID=13 thumbnailPath=video_09.jpg
+time="2025-06-25T22:22:33+02:00" level=debug msg="Providing next image for prefetch" movieFilename=video_09.mp4 thumbnailPath=video_09.jpg
+time="2025-06-25T22:22:33+02:00" level=info msg="HTTP request" duration=1.750097ms method=GET path=/api/slideshow/next-image remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:36+02:00" level=info msg="Committed pending deletion to database" thumbnail_id=24
+time="2025-06-25T22:22:36+02:00" level=info msg="Added deleted movie size to session counter" file_size=18622163 thumbnail_id=24 total_deleted_size=18622163
+time="2025-06-25T22:22:36+02:00" level=info msg="Using predetermined next thumbnail (coordinated with prefetcher)" movieFilename=video_09.mp4 nextID=13 thumbnailPath=video_09.jpg
+time="2025-06-25T22:22:36+02:00" level=debug msg="Pre-determined next thumbnail for prefetch coordination" currentID=13 nextID=16
+time="2025-06-25T22:22:36+02:00" level=info msg="HTTP request" duration=19.79404ms method=GET path=/slideshow/next remote="[::1]:52724" status=303 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:36+02:00" level=info msg="Slideshow request received" newSession=false url=/slideshow
+time="2025-06-25T22:22:36+02:00" level=info msg="Attempting to get thumbnail by ID" targetID=13
+time="2025-06-25T22:22:36+02:00" level=info msg="Successfully found thumbnail by ID" foundThumbnailID=13
+time="2025-06-25T22:22:36+02:00" level=info msg="Before session update check" newSession=false sessionCurrentID=13 sessionNavigationCount=3 sessionPreviousID=9 sessionViewedCount=1 thumbnailID=13
+time="2025-06-25T22:22:36+02:00" level=info msg="No session update needed"
+time="2025-06-25T22:22:36+02:00" level=info msg="Last thumbnail check" currentThumbnailID=13 err="<nil>" excludeForCount="[13 9]" isLastThumbnail=false previousThumbnailID=9 remainingThumbnail=7
+time="2025-06-25T22:22:36+02:00" level=info msg="HTTP request" duration=2.568371ms method=GET path=/slideshow remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:22:37+02:00" level=info msg="Using predetermined next thumbnail for prefetch" movieFilename=video_12.mp4 nextID=16 thumbnailPath=video_12.jpg
+time="2025-06-25T22:22:37+02:00" level=debug msg="Providing next image for prefetch" movieFilename=video_12.mp4 thumbnailPath=video_12.jpg
+time="2025-06-25T22:22:37+02:00" level=info msg="HTTP request" duration=1.22018ms method=GET path=/api/slideshow/next-image remote="[::1]:52724" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:06+02:00" level=info msg="HTTP request" duration=4.829727ms method=GET path=/ remote="[::1]:33990" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:06+02:00" level=info msg="HTTP request" duration="495.982µs" method=GET path=/api/thumbnails remote="[::1]:33990" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:06+02:00" level=info msg="HTTP request" duration="310.561µs" method=GET path=/api/thumbnails remote="[::1]:33998" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:10+02:00" level=info msg="Restored movie from deletion" movie=video_19.mp4 thumbnail_id=24
+time="2025-06-25T22:24:10+02:00" level=info msg="HTTP request" duration=13.73838ms method=POST path=/undo-delete remote="[::1]:33998" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:10+02:00" level=info msg="HTTP request" duration=2.247833ms method=GET path=/api/thumbnails remote="[::1]:33998" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:10+02:00" level=info msg="HTTP request" duration=3.235689ms method=GET path=/api/thumbnails remote="[::1]:33990" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:12+02:00" level=info msg="Resetting viewed status for all thumbnails"
+time="2025-06-25T22:24:12+02:00" level=info msg="Reset viewed status for 1 thumbnails"
+time="2025-06-25T22:24:12+02:00" level=info msg="HTTP request" duration=12.806454ms method=POST path=/reset-views remote="[::1]:33990" status=303 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:12+02:00" level=info msg="HTTP request" duration=5.114726ms method=GET path=/ remote="[::1]:33990" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:12+02:00" level=info msg="HTTP request" duration="690.495µs" method=GET path=/api/thumbnails remote="[::1]:33990" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:16+02:00" level=info msg="Slideshow request received" newSession=true url="/slideshow?new=true"
+time="2025-06-25T22:24:16+02:00" level=info msg="Created new session with CurrentID=0, ViewedCount=0, NavigationCount=0, PreviousID=0, NextID=0"
+time="2025-06-25T22:24:16+02:00" level=info msg="No targetID, getting random unviewed thumbnail"
+time="2025-06-25T22:24:16+02:00" level=info msg="Before session update check" newSession=true sessionCurrentID=0 sessionNavigationCount=0 sessionPreviousID=0 sessionViewedCount=0 thumbnailID=19
+time="2025-06-25T22:24:16+02:00" level=info msg="New session: setting first thumbnail without incrementing counters"
+time="2025-06-25T22:24:16+02:00" level=info msg="Updating session" newCurrentID=19 newNavigationCount=0 newPreviousID=0 newViewedCount=0
+time="2025-06-25T22:24:16+02:00" level=info msg="Pre-determined next thumbnail for prefetch coordination" context=slideshow_display nextID=11
+time="2025-06-25T22:24:16+02:00" level=info msg="Last thumbnail check" currentThumbnailID=19 err="<nil>" excludeForCount="[19]" isLastThumbnail=false previousThumbnailID=0 remainingThumbnail=21
+time="2025-06-25T22:24:16+02:00" level=info msg="HTTP request" duration=2.417491ms method=GET path=/slideshow remote="[::1]:33990" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:17+02:00" level=info msg="Using predetermined next thumbnail for prefetch" movieFilename=video_07.mp4 nextID=11 thumbnailPath=video_07.jpg
+time="2025-06-25T22:24:17+02:00" level=debug msg="Providing next image for prefetch" movieFilename=video_07.mp4 thumbnailPath=video_07.jpg
+time="2025-06-25T22:24:17+02:00" level=info msg="HTTP request" duration=1.15735ms method=GET path=/api/slideshow/next-image remote="[::1]:33990" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:19+02:00" level=info msg="HTTP request" duration=1.918656ms method=GET path=/ remote="[::1]:33990" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:19+02:00" level=info msg="HTTP request" duration=1.004508ms method=GET path=/api/thumbnails remote="[::1]:33990" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:21+02:00" level=info msg="HTTP request" duration=6.477685ms method=GET path=/ remote="[::1]:33990" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:21+02:00" level=info msg="HTTP request" duration="441.178µs" method=GET path=/api/thumbnails remote="[::1]:33990" status=200 user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+time="2025-06-25T22:24:33+02:00" level=info msg="Shutting down..."
+time="2025-06-25T22:24:33+02:00" level=info msg="Shutting down server"
+time="2025-06-25T22:24:33+02:00" level=fatal msg="Failed to start server: http: Server closed"
+time="2025-06-25T22:24:33+02:00" level=info msg="Worker shutting down"

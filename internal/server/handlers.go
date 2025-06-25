@@ -332,7 +332,6 @@ func (s *Server) handleProcessDeletions(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 	// Check if a new session was requested
 	newSession := r.URL.Query().Get("new") == "true"
-	s.log.WithField("newSession", newSession).WithField("url", r.URL.String()).Info("Slideshow request received")
 
 	var session *SessionData
 
@@ -345,7 +344,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		s.log.Info("Created new session with CurrentID=0, ViewedCount=0, NavigationCount=0, PreviousID=0, NextID=0")
+		s.log.Debug("Created new session")
 
 		// Save to cookie
 		if err := s.saveSessionToCookie(w, session); err != nil {
@@ -383,18 +382,14 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 
 	if targetID > 0 {
 		// Get the specified thumbnail (either from session or query parameter)
-		s.log.WithField("targetID", targetID).Info("Attempting to get thumbnail by ID")
 		thumbnail, err = s.db.GetByID(targetID)
 		if err != nil || thumbnail == nil {
 			// If the stored thumbnail doesn't exist anymore, get a new random one
 			s.log.WithError(err).WithField("targetID", targetID).Warn("Stored thumbnail not found, getting new random thumbnail")
 			thumbnail, err = s.db.GetRandomUnviewedThumbnail()
-		} else {
-			s.log.WithField("foundThumbnailID", thumbnail.ID).Info("Successfully found thumbnail by ID")
 		}
 	} else {
 		// No current thumbnail in session, get a random unviewed thumbnail
-		s.log.Info("No targetID, getting random unviewed thumbnail")
 		thumbnail, err = s.db.GetRandomUnviewedThumbnail()
 	}
 
@@ -423,19 +418,19 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		"sessionNavigationCount": session.NavigationCount,
 		"sessionPreviousID":      session.PreviousID,
 		"newSession":             newSession,
-	}).Info("Before session update check")
+	}).Debug("Before session update check")
 
 	shouldUpdateSession := false
 	if newSession {
 		// For new sessions, always set the first thumbnail without incrementing counters
 		if session.CurrentID == 0 {
-			s.log.Info("New session: setting first thumbnail without incrementing counters")
+			s.log.Debug("New session: setting first thumbnail without incrementing counters")
 			session.CurrentID = thumbnail.ID
 			shouldUpdateSession = true
 		}
 	} else if thumbnail.ID != session.CurrentID {
 		// For existing sessions, only update if we're viewing a different thumbnail
-		s.log.Info("Existing session: viewing different thumbnail, updating with navigation logic")
+		s.log.Debug("Existing session: viewing different thumbnail, updating with navigation logic")
 		if session.CurrentID > 0 {
 			// This is actual navigation between thumbnails
 			session.ViewedCount++
@@ -452,7 +447,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 			"newViewedCount":     session.ViewedCount,
 			"newNavigationCount": session.NavigationCount,
 			"newPreviousID":      session.PreviousID,
-		}).Info("Updating session")
+		}).Debug("Updating session")
 
 		// Pre-determine the next thumbnail for prefetch coordination
 		// Only do this if we don't already have a NextID or if this is a new session
@@ -463,7 +458,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 				s.log.WithFields(logrus.Fields{
 					"nextID":  session.NextID,
 					"context": "slideshow_display",
-				}).Info("Pre-determined next thumbnail for prefetch coordination")
+				}).Debug("Pre-determined next thumbnail for prefetch coordination")
 			}
 		}
 
@@ -472,7 +467,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 			s.log.WithError(err).Error("Failed to save updated session")
 		}
 	} else {
-		s.log.Info("No session update needed")
+		s.log.Debug("No session update needed")
 	}
 
 	// Calculate current position in this session
@@ -510,7 +505,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		}(),
 		"isLastThumbnail": isLastThumbnail,
 		"err":             err,
-	}).Info("Last thumbnail check")
+	}).Debug("Last thumbnail check")
 
 	// Render template with data
 	data := struct {
@@ -554,42 +549,42 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 	// Check if this is a skip operation (don't mark as viewed)
 	skipViewing := r.URL.Query().Get("skip") == "true"
 
-	// First, commit any pending viewing from previous navigation
-	if session.PreviousID != 0 && session.PreviousID != currentID && !session.PendingDelete {
-		// Mark the previous thumbnail as viewed (delayed from last navigation)
-		if err := s.db.MarkAsViewedByID(session.PreviousID); err != nil {
-			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to mark previous thumbnail as viewed")
+	// Handle pending operations from previous navigation
+	if session.PreviousID != 0 && session.PreviousID != currentID {
+		if session.PendingDelete {
+			// Commit pending deletion when moving to next
+			// Get the thumbnail to obtain its file size before marking for deletion
+			deletedThumbnail, err := s.db.GetByID(session.PreviousID)
+			if err != nil {
+				s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to get thumbnail for deletion size tracking")
+			}
+
+			if err := s.db.MarkForDeletionByID(session.PreviousID); err != nil {
+				s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit pending deletion")
+			} else {
+				s.log.WithField("thumbnail_id", session.PreviousID).Debug("Committed pending deletion to database")
+
+				// Add the file size to the session's deleted size counter
+				if deletedThumbnail != nil {
+					session.DeletedSize += deletedThumbnail.FileSize
+					s.log.WithFields(logrus.Fields{
+						"thumbnail_id":       session.PreviousID,
+						"file_size":          deletedThumbnail.FileSize,
+						"total_deleted_size": session.DeletedSize,
+					}).Info("Added deleted movie size to session counter")
+				}
+			}
+			// Clear the pending deletion
+			session.PendingDelete = false
 		} else {
-			s.log.WithField("thumbnail_id", session.PreviousID).Info("Marked previous thumbnail as viewed (delayed)")
-			session.ViewedCount++
-		}
-	}
-
-	// Commit any pending deletion when moving to next (regardless of skip or normal navigation)
-	if session.PendingDelete && session.PreviousID != 0 && session.PreviousID != currentID {
-		// Get the thumbnail to obtain its file size before marking for deletion
-		deletedThumbnail, err := s.db.GetByID(session.PreviousID)
-		if err != nil {
-			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to get thumbnail for deletion size tracking")
-		}
-
-		if err := s.db.MarkForDeletionByID(session.PreviousID); err != nil {
-			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit pending deletion")
-		} else {
-			s.log.WithField("thumbnail_id", session.PreviousID).Info("Committed pending deletion to database")
-
-			// Add the file size to the session's deleted size counter
-			if deletedThumbnail != nil {
-				session.DeletedSize += deletedThumbnail.FileSize
-				s.log.WithFields(logrus.Fields{
-					"thumbnail_id":       session.PreviousID,
-					"file_size":          deletedThumbnail.FileSize,
-					"total_deleted_size": session.DeletedSize,
-				}).Info("Added deleted movie size to session counter")
+			// Mark the previous thumbnail as viewed (delayed from last navigation)
+			if err := s.db.MarkAsViewedByID(session.PreviousID); err != nil {
+				s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to mark previous thumbnail as viewed")
+			} else {
+				s.log.WithField("thumbnail_id", session.PreviousID).Debug("Marked previous thumbnail as viewed (delayed)")
+				session.ViewedCount++
 			}
 		}
-		// Clear the pending deletion
-		session.PendingDelete = false
 	}
 
 	// Get a random unviewed thumbnail instead of the next in sequence
@@ -606,7 +601,7 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 			session.NextID = 0
 		} else if nextThumbnail != nil && nextThumbnail.IsViewed() {
 			// The predetermined thumbnail was already viewed, get a new one
-			s.log.WithField("nextID", session.NextID).Info("Predetermined next thumbnail was already viewed, getting new random")
+			s.log.WithField("nextID", session.NextID).Debug("Predetermined next thumbnail was already viewed, getting new random")
 			session.NextID = 0
 			nextThumbnail = nil
 		} else if nextThumbnail != nil {
@@ -614,13 +609,13 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 				"nextID":        session.NextID,
 				"thumbnailPath": nextThumbnail.ThumbnailPath,
 				"movieFilename": nextThumbnail.MovieFilename,
-			}).Info("Using predetermined next thumbnail (coordinated with prefetcher)")
+			}).Debug("Using predetermined next thumbnail (coordinated with prefetcher)")
 		}
 	}
 
 	// If we don't have a valid predetermined thumbnail, get a random one
 	if nextThumbnail == nil {
-		s.log.Info("Getting random thumbnail (no predetermined NextID or it was invalid)")
+		s.log.Debug("Getting random thumbnail (no predetermined NextID or it was invalid)")
 
 		// Exclude current ID to avoid getting the same thumbnail
 		var excludeIDs []int64
@@ -673,7 +668,7 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 						return 0
 					}
 				}(),
-			}).Info("Skip operation on last thumbnail or same thumbnail - not updating PreviousID")
+			}).Debug("Skip operation on last thumbnail or same thumbnail - not updating PreviousID")
 		}
 	}
 
@@ -869,8 +864,10 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If there's already a pending deletion, commit it to the database first
+	// Before setting up deletion, handle any previous thumbnails that need to be marked as viewed
+	// and any existing pending deletions
 	if session.PendingDelete && session.PreviousID != 0 {
+		// If there's already a pending deletion, commit it to the database first
 		// Get the thumbnail to obtain its file size before marking for deletion
 		deletedThumbnail, err := s.db.GetByID(session.PreviousID)
 		if err != nil {
@@ -881,7 +878,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit pending deletion")
 			// Continue anyway - don't fail the current operation
 		} else {
-			s.log.WithField("thumbnail_id", session.PreviousID).Info("Committed pending deletion to database")
+			s.log.WithField("thumbnail_id", session.PreviousID).Debug("Committed pending deletion to database")
 
 			// Add the file size to the session's deleted size counter
 			if deletedThumbnail != nil {
@@ -892,6 +889,21 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 					"total_deleted_size": session.DeletedSize,
 				}).Info("Added deleted movie size to session counter")
 			}
+		}
+
+		// Clear the pending deletion state
+		session.PendingDelete = false
+		session.PreviousID = 0
+	}
+
+	// Now check if there's a previous thumbnail that should be marked as viewed
+	// This handles the normal case: A -> B -> delete B (mark A as viewed)
+	if session.PreviousID != 0 && session.PreviousID != thumbnailID {
+		if err := s.db.MarkAsViewedByID(session.PreviousID); err != nil {
+			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to mark previous thumbnail as viewed before deletion")
+		} else {
+			s.log.WithField("thumbnail_id", session.PreviousID).Debug("Marked previous thumbnail as viewed before deletion")
+			session.ViewedCount++
 		}
 	}
 
@@ -907,7 +919,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	s.log.WithFields(logrus.Fields{
 		"movie":        thumbnail.MoviePath,
 		"thumbnail_id": thumbnail.ID,
-	}).Info("Marked movie for deletion in session (pending)")
+	}).Debug("Marked movie for deletion in session (pending)")
 
 	// If ajax request, return JSON response
 	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
@@ -1097,22 +1109,22 @@ func (s *Server) handleSlideshowNextImage(w http.ResponseWriter, r *http.Request
 
 		// Double-check the thumbnail is still unviewed
 		if nextThumbnail != nil && nextThumbnail.IsViewed() {
-			s.log.WithField("nextID", session.NextID).Info("Predetermined next thumbnail was already viewed")
+			s.log.WithField("nextID", session.NextID).Debug("Predetermined next thumbnail was already viewed")
 			nextThumbnail = nil
 		} else if nextThumbnail != nil {
 			s.log.WithFields(logrus.Fields{
 				"nextID":        session.NextID,
 				"thumbnailPath": nextThumbnail.ThumbnailPath,
 				"movieFilename": nextThumbnail.MovieFilename,
-			}).Info("Using predetermined next thumbnail for prefetch")
+			}).Debug("Using predetermined next thumbnail for prefetch")
 		}
 	} else {
-		s.log.WithField("sessionNextID", session.NextID).Info("No NextID in session, cannot prefetch")
+		s.log.WithField("sessionNextID", session.NextID).Debug("No NextID in session, cannot prefetch")
 	}
 
 	if nextThumbnail == nil {
 		// No more thumbnails
-		s.log.Info("No next thumbnail available for prefetch")
+		s.log.Debug("No next thumbnail available for prefetch")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"hasNext": false,
 		})
@@ -1162,7 +1174,7 @@ func (s *Server) handleSlideshowFinish(w http.ResponseWriter, r *http.Request) {
 		if err := s.db.MarkAsViewedByID(session.PreviousID); err != nil {
 			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to mark previous thumbnail as viewed during finish")
 		} else {
-			s.log.WithField("thumbnail_id", session.PreviousID).Info("Marked previous thumbnail as viewed (delayed) during finish")
+			s.log.WithField("thumbnail_id", session.PreviousID).Debug("Marked previous thumbnail as viewed (delayed) during finish")
 		}
 	}
 
