@@ -1775,3 +1775,498 @@ func TestRequireValidSession(t *testing.T) {
 		}
 	})
 }
+
+// End-to-end slideshow workflow tests
+func TestSlideshowEndToEndWorkflows(t *testing.T) {
+	t.Run("start slideshow -> next -> next = first image marked as viewed", func(t *testing.T) {
+		server := createTestServer()
+		mockDB := server.db.(*MockDB)
+
+		// Create test thumbnails
+		thumbnail1 := &models.Thumbnail{ID: 1, Status: models.StatusSuccess, Viewed: 0}
+		thumbnail2 := &models.Thumbnail{ID: 2, Status: models.StatusSuccess, Viewed: 0}
+		thumbnail3 := &models.Thumbnail{ID: 3, Status: models.StatusSuccess, Viewed: 0}
+
+		mockDB.AddThumbnail(thumbnail1)
+		mockDB.AddThumbnail(thumbnail2)
+		mockDB.AddThumbnail(thumbnail3)
+
+		// Step 1: Create a new session manually (simulating slideshow start)
+		session, err := server.createNewSession()
+		if err != nil {
+			t.Fatalf("Failed to create session: %v", err)
+		}
+		session.CurrentID = thumbnail1.ID
+
+		// Step 2: Navigate to next (should mark thumbnail1 as viewed and move to thumbnail2)
+		// First mark current as viewed
+		err = server.db.MarkAsViewedByID(thumbnail1.ID)
+		if err != nil {
+			t.Fatalf("Failed to mark thumbnail1 as viewed: %v", err)
+		}
+		session.ViewedCount++
+		session.PreviousID = session.CurrentID
+		session.CurrentID = thumbnail2.ID
+		session.NavigationCount++
+
+		// Step 3: Navigate to next again (should mark thumbnail2 as viewed and move to thumbnail3)
+		err = server.db.MarkAsViewedByID(thumbnail2.ID)
+		if err != nil {
+			t.Fatalf("Failed to mark thumbnail2 as viewed: %v", err)
+		}
+		session.ViewedCount++
+		session.PreviousID = session.CurrentID
+		session.CurrentID = thumbnail3.ID
+		session.NavigationCount++
+
+		// Verify: First image should be marked as viewed
+		updatedThumbnail1, _ := mockDB.GetByID(1)
+		if !updatedThumbnail1.IsViewed() {
+			t.Error("Expected first thumbnail to be marked as viewed after next -> next")
+		}
+
+		// Second image should also be marked as viewed
+		updatedThumbnail2, _ := mockDB.GetByID(2)
+		if !updatedThumbnail2.IsViewed() {
+			t.Error("Expected second thumbnail to be marked as viewed after next -> next")
+		}
+
+		// Third image should NOT be viewed yet (it's the current one)
+		updatedThumbnail3, _ := mockDB.GetByID(3)
+		if updatedThumbnail3.IsViewed() {
+			t.Error("Expected third thumbnail to NOT be marked as viewed (current image)")
+		}
+
+		// Verify session state
+		if session.ViewedCount != 2 {
+			t.Errorf("Expected ViewedCount to be 2, got %d", session.ViewedCount)
+		}
+		if session.NavigationCount != 2 {
+			t.Errorf("Expected NavigationCount to be 2, got %d", session.NavigationCount)
+		}
+	})
+
+	t.Run("start slideshow -> delete -> next = first image marked as deleted", func(t *testing.T) {
+		server := createTestServer()
+		mockDB := server.db.(*MockDB)
+
+		// Create test thumbnails
+		thumbnail1 := &models.Thumbnail{ID: 10, Status: models.StatusSuccess, Viewed: 0}
+		thumbnail2 := &models.Thumbnail{ID: 11, Status: models.StatusSuccess, Viewed: 0}
+
+		mockDB.AddThumbnail(thumbnail1)
+		mockDB.AddThumbnail(thumbnail2)
+
+		// Step 1: Create session and start with thumbnail1
+		session, _ := server.createNewSession()
+		session.CurrentID = thumbnail1.ID
+
+		// Step 2: Delete current thumbnail (thumbnail1) - mark for pending deletion
+		session.PreviousID = thumbnail1.ID
+		session.PendingDelete = true
+
+		// Step 3: Navigate to next (should commit the deletion and move to thumbnail2)
+		if session.PendingDelete && session.PreviousID != 0 {
+			// Commit the pending deletion
+			err := server.db.MarkForDeletionByID(session.PreviousID)
+			if err != nil {
+				t.Fatalf("Failed to mark for deletion: %v", err)
+			}
+			session.PendingDelete = false
+		}
+		session.CurrentID = thumbnail2.ID
+		session.NavigationCount++
+
+		// Verify: First image should be marked as deleted
+		updatedThumbnail1, _ := mockDB.GetByID(10)
+		if updatedThumbnail1.Status != models.StatusDeleted {
+			t.Errorf("Expected first thumbnail to be marked as deleted, got status %s", updatedThumbnail1.Status)
+		}
+
+		// Second image should still be success status
+		updatedThumbnail2, _ := mockDB.GetByID(11)
+		if updatedThumbnail2.Status != models.StatusSuccess {
+			t.Errorf("Expected second thumbnail to remain success status, got %s", updatedThumbnail2.Status)
+		}
+
+		// Verify session state
+		if session.PendingDelete {
+			t.Error("Expected PendingDelete to be false after committing deletion")
+		}
+	})
+
+	t.Run("start slideshow -> delete -> delete -> next = first and second marked as deleted", func(t *testing.T) {
+		server := createTestServer()
+		mockDB := server.db.(*MockDB)
+
+		// Create test thumbnails
+		thumbnail1 := &models.Thumbnail{ID: 20, Status: models.StatusSuccess, Viewed: 0}
+		thumbnail2 := &models.Thumbnail{ID: 21, Status: models.StatusSuccess, Viewed: 0}
+		thumbnail3 := &models.Thumbnail{ID: 22, Status: models.StatusSuccess, Viewed: 0}
+
+		mockDB.AddThumbnail(thumbnail1)
+		mockDB.AddThumbnail(thumbnail2)
+		mockDB.AddThumbnail(thumbnail3)
+
+		// Step 1: Create session and start with thumbnail1
+		session, _ := server.createNewSession()
+		session.CurrentID = thumbnail1.ID
+
+		// Step 2: Delete first thumbnail (mark for pending deletion)
+		session.PreviousID = thumbnail1.ID
+		session.PendingDelete = true
+
+		// Step 3: Navigate to thumbnail2 (commits deletion of thumbnail1)
+		if session.PendingDelete && session.PreviousID != 0 {
+			server.db.MarkForDeletionByID(session.PreviousID)
+			session.PendingDelete = false
+		}
+		session.PreviousID = session.CurrentID
+		session.CurrentID = thumbnail2.ID
+		session.NavigationCount++
+
+		// Step 4: Delete second thumbnail
+		session.PreviousID = thumbnail2.ID
+		session.PendingDelete = true
+
+		// Step 5: Navigate to thumbnail3 (commits deletion of thumbnail2)
+		if session.PendingDelete && session.PreviousID != 0 {
+			server.db.MarkForDeletionByID(session.PreviousID)
+			session.PendingDelete = false
+		}
+		session.CurrentID = thumbnail3.ID
+		session.NavigationCount++
+
+		// Verify: Both first and second images should be marked as deleted
+		updatedThumbnail1, _ := mockDB.GetByID(20)
+		if updatedThumbnail1.Status != models.StatusDeleted {
+			t.Errorf("Expected first thumbnail to be marked as deleted, got status %s", updatedThumbnail1.Status)
+		}
+
+		updatedThumbnail2, _ := mockDB.GetByID(21)
+		if updatedThumbnail2.Status != models.StatusDeleted {
+			t.Errorf("Expected second thumbnail to be marked as deleted, got status %s", updatedThumbnail2.Status)
+		}
+
+		// Third image should still be success status
+		updatedThumbnail3, _ := mockDB.GetByID(22)
+		if updatedThumbnail3.Status != models.StatusSuccess {
+			t.Errorf("Expected third thumbnail to remain success status, got %s", updatedThumbnail3.Status)
+		}
+
+		// Verify session state
+		if session.PendingDelete {
+			t.Error("Expected PendingDelete to be false after final commit")
+		}
+		if session.NavigationCount != 2 {
+			t.Errorf("Expected NavigationCount to be 2, got %d", session.NavigationCount)
+		}
+	})
+
+	t.Run("slideshow workflow with mark viewed actions", func(t *testing.T) {
+		server := createTestServer()
+		mockDB := server.db.(*MockDB)
+
+		// Create test thumbnails
+		thumbnail1 := &models.Thumbnail{ID: 30, Status: models.StatusSuccess, Viewed: 0}
+		thumbnail2 := &models.Thumbnail{ID: 31, Status: models.StatusSuccess, Viewed: 0}
+
+		mockDB.AddThumbnail(thumbnail1)
+		mockDB.AddThumbnail(thumbnail2)
+
+		// Step 1: Create session and start with thumbnail1
+		session, _ := server.createNewSession()
+		session.CurrentID = thumbnail1.ID
+
+		// Step 2: Mark first thumbnail as viewed explicitly
+		err := server.db.MarkAsViewedByID(thumbnail1.ID)
+		if err != nil {
+			t.Fatalf("Failed to mark thumbnail as viewed: %v", err)
+		}
+		session.ViewedCount++
+
+		// Step 3: Navigate to next (should move to thumbnail2)
+		session.PreviousID = session.CurrentID
+		session.CurrentID = thumbnail2.ID
+		session.NavigationCount++
+
+		// Verify: First thumbnail should be marked as viewed
+		updatedThumbnail1, _ := mockDB.GetByID(30)
+		if !updatedThumbnail1.IsViewed() {
+			t.Error("Expected first thumbnail to be marked as viewed after explicit mark viewed action")
+		}
+
+		// Second thumbnail should not be viewed yet
+		updatedThumbnail2, _ := mockDB.GetByID(31)
+		if updatedThumbnail2.IsViewed() {
+			t.Error("Expected second thumbnail to NOT be viewed yet")
+		}
+
+		// Verify session state
+		if session.ViewedCount != 1 {
+			t.Errorf("Expected ViewedCount to be 1, got %d", session.ViewedCount)
+		}
+		if session.NavigationCount != 1 {
+			t.Errorf("Expected NavigationCount to be 1, got %d", session.NavigationCount)
+		}
+	})
+
+	t.Run("complex workflow: view -> delete -> view -> next", func(t *testing.T) {
+		server := createTestServer()
+		mockDB := server.db.(*MockDB)
+
+		// Create test thumbnails
+		thumbnail1 := &models.Thumbnail{ID: 40, Status: models.StatusSuccess, Viewed: 0}
+		thumbnail2 := &models.Thumbnail{ID: 41, Status: models.StatusSuccess, Viewed: 0}
+		thumbnail3 := &models.Thumbnail{ID: 42, Status: models.StatusSuccess, Viewed: 0}
+
+		mockDB.AddThumbnail(thumbnail1)
+		mockDB.AddThumbnail(thumbnail2)
+		mockDB.AddThumbnail(thumbnail3)
+
+		// Step 1: Start with thumbnail1
+		session, _ := server.createNewSession()
+		session.CurrentID = thumbnail1.ID
+
+		// Step 2: Mark thumbnail1 as viewed
+		server.db.MarkAsViewedByID(thumbnail1.ID)
+		session.ViewedCount++
+
+		// Step 3: Navigate to thumbnail2
+		session.PreviousID = session.CurrentID
+		session.CurrentID = thumbnail2.ID
+		session.NavigationCount++
+
+		// Step 4: Delete thumbnail2 (mark for pending deletion)
+		session.PreviousID = thumbnail2.ID
+		session.PendingDelete = true
+
+		// Step 5: Navigate to thumbnail3
+		session.CurrentID = thumbnail3.ID
+		session.NavigationCount++
+
+		// Step 6: Mark thumbnail3 as viewed
+		server.db.MarkAsViewedByID(thumbnail3.ID)
+		session.ViewedCount++
+
+		// Step 7: Navigate to next (should commit deletion of thumbnail2)
+		if session.PendingDelete && session.PreviousID != 0 {
+			server.db.MarkForDeletionByID(session.PreviousID)
+			session.PendingDelete = false
+		}
+		session.NavigationCount++
+
+		// Verify states
+		updatedThumbnail1, _ := mockDB.GetByID(40)
+		if !updatedThumbnail1.IsViewed() {
+			t.Error("Expected thumbnail1 to be viewed")
+		}
+
+		updatedThumbnail2, _ := mockDB.GetByID(41)
+		if updatedThumbnail2.Status != models.StatusDeleted {
+			t.Errorf("Expected thumbnail2 to be deleted, got %s", updatedThumbnail2.Status)
+		}
+
+		updatedThumbnail3, _ := mockDB.GetByID(42)
+		if !updatedThumbnail3.IsViewed() {
+			t.Error("Expected thumbnail3 to be viewed")
+		}
+
+		// Verify session counters
+		if session.ViewedCount != 2 {
+			t.Errorf("Expected ViewedCount to be 2, got %d", session.ViewedCount)
+		}
+		if session.PendingDelete {
+			t.Error("Expected no pending deletions")
+		}
+	})
+}
+
+// Additional helper methods for TestServer to support navigation
+func (ts *TestServer) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
+	// Require valid session - redirect to /slideshow if none found
+	session, ok := ts.requireValidSession(w, r)
+	if !ok {
+		return // already redirected
+	}
+
+	// Handle any previous pending deletions
+	if session.PendingDelete && session.PreviousID != 0 {
+		// Commit previous deletion first
+		if err := ts.db.MarkForDeletionByID(session.PreviousID); err != nil {
+			ts.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit pending deletion")
+		}
+		session.PendingDelete = false
+	}
+
+	// Mark previous thumbnail as viewed if needed
+	if session.CurrentID != 0 && !session.PendingDelete {
+		if err := ts.db.MarkAsViewedByID(session.CurrentID); err != nil {
+			ts.log.WithError(err).WithField("thumbnail_id", session.CurrentID).Error("Failed to mark current thumbnail as viewed before navigation")
+		} else {
+			session.ViewedCount++
+		}
+	}
+
+	// Get next random thumbnail
+	nextThumbnail, err := ts.db.GetRandomUnviewedThumbnail()
+	if err != nil {
+		ts.log.WithError(err).Error("Failed to get next thumbnail")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if nextThumbnail == nil {
+		// No more thumbnails, redirect to control with message
+		http.SetCookie(w, &http.Cookie{
+			Name:  "flash",
+			Value: "No more unviewed thumbnails",
+			Path:  "/",
+		})
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	// Update session for next thumbnail
+	session.PreviousID = session.CurrentID
+	session.CurrentID = nextThumbnail.ID
+	session.NavigationCount++
+
+	// Save updated session
+	if err := ts.saveSessionToCookie(w, session); err != nil {
+		ts.log.WithError(err).Error("Failed to save session after navigation")
+	}
+
+	// Redirect to slideshow to display the next thumbnail
+	http.Redirect(w, r, "/slideshow", http.StatusSeeOther)
+}
+
+func (ts *TestServer) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request) {
+	// Require valid session - redirect to /slideshow if none found
+	session, ok := ts.requireValidSession(w, r)
+	if !ok {
+		return // already redirected
+	}
+
+	// Can only go back if there's a previous ID
+	if session.PreviousID == 0 {
+		http.Redirect(w, r, "/slideshow", http.StatusSeeOther)
+		return
+	}
+
+	// Get the previous thumbnail
+	prevThumbnail, err := ts.db.GetByID(session.PreviousID)
+	if err != nil || prevThumbnail == nil {
+		ts.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to get previous thumbnail")
+		http.Redirect(w, r, "/slideshow", http.StatusSeeOther)
+		return
+	}
+
+	// Update session to go back
+	session.CurrentID = session.PreviousID
+	session.PreviousID = 0 // Clear previous since we're going back
+	session.NavigationCount++
+
+	// Save updated session
+	if err := ts.saveSessionToCookie(w, session); err != nil {
+		ts.log.WithError(err).Error("Failed to save session after going back")
+	}
+
+	// Redirect to slideshow to display the previous thumbnail
+	http.Redirect(w, r, "/slideshow", http.StatusSeeOther)
+}
+
+func (ts *TestServer) handleSlideshowNextImage(w http.ResponseWriter, r *http.Request) {
+	// This is essentially the same as handleSlideshowNext
+	ts.handleSlideshowNext(w, r)
+}
+
+func (ts *TestServer) handleSlideshowFinish(w http.ResponseWriter, r *http.Request) {
+	// Require valid session
+	session, ok := ts.requireValidSession(w, r)
+	if !ok {
+		return // already redirected
+	}
+
+	// Record session completion in metrics
+	duration := time.Duration(time.Now().Unix()-session.StartedAt) * time.Second
+	ts.metrics.RecordSlideshowSession("completed", duration)
+
+	// Mark current thumbnail as viewed if not already done
+	if session.CurrentID != 0 {
+		if err := ts.db.MarkAsViewedByID(session.CurrentID); err != nil {
+			ts.log.WithError(err).WithField("thumbnail_id", session.CurrentID).Error("Failed to mark final thumbnail as viewed")
+		} else {
+			session.ViewedCount++
+		}
+	}
+
+	// Handle any pending deletions
+	if session.PendingDelete && session.PreviousID != 0 {
+		if err := ts.db.MarkForDeletionByID(session.PreviousID); err != nil {
+			ts.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit final pending deletion")
+		}
+	}
+
+	// Clear the session cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:   "slideshow_session",
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
+
+	// Set completion message
+	http.SetCookie(w, &http.Cookie{
+		Name:  "flash",
+		Value: fmt.Sprintf("Slideshow completed! Viewed %d images.", session.ViewedCount),
+		Path:  "/",
+	})
+
+	// Redirect to control page
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (ts *TestServer) handleDeleteAndFinish(w http.ResponseWriter, r *http.Request) {
+	// Require valid session
+	session, ok := ts.requireValidSession(w, r)
+	if !ok {
+		return // already redirected
+	}
+
+	// Mark current thumbnail for deletion
+	if session.CurrentID != 0 {
+		if err := ts.db.MarkForDeletionByID(session.CurrentID); err != nil {
+			ts.log.WithError(err).WithField("thumbnail_id", session.CurrentID).Error("Failed to mark final thumbnail for deletion")
+		}
+	}
+
+	// Handle any previous pending deletions
+	if session.PendingDelete && session.PreviousID != 0 {
+		if err := ts.db.MarkForDeletionByID(session.PreviousID); err != nil {
+			ts.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit previous pending deletion")
+		}
+	}
+
+	// Record session completion
+	duration := time.Duration(time.Now().Unix()-session.StartedAt) * time.Second
+	ts.metrics.RecordSlideshowSession("completed_with_delete", duration)
+
+	// Clear the session cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:   "slideshow_session",
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
+
+	// Set completion message
+	http.SetCookie(w, &http.Cookie{
+		Name:  "flash",
+		Value: fmt.Sprintf("Slideshow completed with deletion! Viewed %d images.", session.ViewedCount),
+		Path:  "/",
+	})
+
+	// Redirect to control page
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
