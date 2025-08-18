@@ -4,25 +4,36 @@ A Go application for generating and managing thumbnail mosaics from movie files.
 
 ## Features
 
-- Generates thumbnail mosaics from movie files using FFmpeg
-- Runs scheduled background scans for new movie files
-- Maintains a SQLite database to track relationships
-- Provides a web interface for browsing and managing thumbnails
-- Tracks movie metadata including duration, resolution, and file size
-- Runs as a containerized application with minimal dependencies
-- Supports importing existing thumbnails without regenerating them
+- **Thumbnail Generation**: Creates thumbnail mosaics from movie files using FFmpeg
+- **Background Scanning**: Runs scheduled scans for new movie files
+- **Database Management**: Maintains SQLite database to track relationships and metadata
+- **Web Interface**: Modern web interface for browsing and managing thumbnails
+- **Slideshow Mode**: Interactive slideshow with keyboard controls for viewing/managing thumbnails
+- **Session Tracking**: Tracks slideshow progress and provides undo functionality
+- **Import Support**: Import existing thumbnails without regenerating them
+- **Metadata Extraction**: Tracks movie duration, resolution, file size, and creation dates
+- **Containerized**: Runs as a containerized application with minimal dependencies
+- **Metrics Support**: Built-in Prometheus metrics for monitoring
+- **Deletion Management**: Safe deletion with undo capabilities and background processing
 
 ## Prerequisites
 
-- Podman
+- **Container Runtime**: Podman or Docker
+- **For Development**: Go 1.24+ and optionally Task runner
+- **System Requirements**: FFmpeg is included in the container image
 
 ## Quick Start
 
-### Using Podman
+### Using Podman/Docker
 
 1. Build the container image:
    ```bash
    podman build -t movie-thumbnailer-go .
+   ```
+
+   Or using Task:
+   ```bash
+   task build
    ```
 
 2. Run the container:
@@ -83,6 +94,10 @@ You can configure the application by setting environment variables:
 - `DISABLE_DELETION`: Disable deletion worker and prevent processing of deletion queue (default: `false`)
 - `IMPORT_EXISTING`: Import existing thumbnails without regenerating (default: `false`)
 
+### Monitoring Settings
+- `METRICS_PORT`: Port for Prometheus metrics endpoint (default: same as `SERVER_PORT`)
+- The application exposes metrics at `/metrics` endpoint for Prometheus monitoring
+
 ## Database Schema
 
 Thumbnails are stored in a SQLite database with the following schema:
@@ -117,25 +132,49 @@ Key fields:
 The application provides two main pages:
 
 ### Control Page (/)
-- Displays statistics about movies and thumbnails
-- Provides controls for manual scanning and cleanup
-- Shows lists of thumbnails by status
+- **Dashboard**: Displays comprehensive statistics about movies and thumbnails
+- **Session Management**: Shows current slideshow session progress if active
+- **Manual Controls**: Buttons for scanning, cleanup, and processing deletions
+- **Thumbnail Lists**: Browse thumbnails by status (unviewed, viewed, deleted, errors)
+- **Real-time Updates**: Dynamic loading of thumbnail data via JavaScript
+- **Slideshow Launcher**: Start new slideshow sessions from unviewed thumbnails
 
 ### Slideshow Page (/slideshow)
-- Displays thumbnails in a fullscreen view
+- Displays thumbnails in a fullscreen slideshow view
+- Shows random unviewed thumbnails
+- Tracks session progress and statistics
 - Keyboard shortcuts:
-  - Right arrow or Space: Next thumbnail
-  - Left arrow: Previous thumbnail
-  - 'M': Mark current thumbnail as viewed
-  - 'D': Delete current thumbnail/movie
-  - 'R': Reset history
-  - 'ESC': Return to control page
+  - **→** (Right arrow) or **Space**: Mark as viewed and go to next thumbnail
+  - **U**: Undo last action (single-level undo)
+  - **D**: Delete current thumbnail/movie
+  - **S**: Skip to next thumbnail without marking as viewed
+  - **Esc**: Return to control page
+
+### Additional Features
+
+- **Task Runner**: Includes `Taskfile.yml` for common development tasks
+- **Docker Support**: Complete containerization with multi-stage builds
+- **Local Development**: Easy local development setup with test data
+- **Error Handling**: Comprehensive error handling and logging
+- **Migration Support**: Database migration capabilities
+- **Cleanup Tools**: Automatic orphan cleanup and deletion queue processing
+
+### API Endpoints
+
+The application provides several API endpoints for programmatic access:
+
+- `GET /api/stats` - Get application statistics
+- `GET /api/thumbnails` - List thumbnails (supports filtering by status, viewed state)
+- `GET /api/thumbnails/{id}` - Get specific thumbnail details
+- `GET /api/slideshow/next-image` - Preload next slideshow image
+
+For detailed monitoring capabilities, see `METRICS.md` for comprehensive Prometheus metrics documentation.
 
 ## Development
 
 ### Building from Source
 
-1. Install Go (version 1.21 or higher)
+1. Install Go (version 1.24 or higher)
 2. Clone the repository
 3. Install dependencies:
    ```bash
@@ -146,17 +185,94 @@ The application provides two main pages:
    go build -o movie-thumbnailer ./cmd/movie-thumbnailer
    ```
 
+Alternative build using Task:
+```bash
+# Install Task (if not already installed)
+# Then build using the provided Taskfile
+task gobuild
+```
+
+### Local Development Setup
+
+For local development and testing:
+
+```bash
+# Build the application
+task gobuild
+
+# Run locally with test data
+./runlocal.sh
+```
+
+The `runlocal.sh` script sets up the application with test data and enables debug mode.
+
 ### Running Tests
 
 ```bash
 go test ./...
 ```
 
+Or using Task:
+```bash
+task test
+```
+
+### Available Task Commands
+
+The project includes a `Taskfile.yml` with several useful commands:
+
+- `task build` - Build container image
+- `task gobuild` - Build Go executable locally  
+- `task test` - Run tests in container
+- `task clean` - Clean build artifacts
+- `task version` - Display version information
+
+## Architecture
+
+The application follows a clean architecture pattern:
+
+- **`cmd/`** - Application entry points
+- **`internal/config`** - Configuration management
+- **`internal/database`** - Database operations and models
+- **`internal/ffmpeg`** - FFmpeg thumbnail generation
+- **`internal/scanner`** - File system scanning and background tasks
+- **`internal/server`** - HTTP server and request handlers
+- **`internal/worker`** - Background job processing
+- **`internal/metrics`** - Prometheus metrics collection
+- **`web/`** - Static assets and templates
+
+## Troubleshooting
+
+### Common Issues
+
+**Container won't start:**
+- Ensure the mounted directories exist and are writable
+- Check that port 8080 is not already in use
+
+**No thumbnails being generated:**
+- Verify FFmpeg is working by checking container logs
+- Ensure movie files are in supported formats (mp4, mkv, avi, mov, mts, wmv)
+- Check file permissions on the movies directory
+
+**Performance issues:**
+- Adjust `MAX_WORKERS` environment variable based on CPU cores
+- Monitor metrics at `/metrics` endpoint to identify bottlenecks
+- Consider adjusting `GRID_COLS` and `GRID_ROWS` for smaller thumbnails
+
+**High memory usage:**
+- Reduce `MAX_WORKERS` for concurrent processing
+- Check for large movie files that may require more memory for processing
+
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is open source. See the repository for license details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
 
 ## Acknowledgments
 
-- Based on the original shell script implementation
-- Uses FFmpeg for thumbnail generation
+- Uses FFmpeg for robust thumbnail generation
+- Built with Go for performance and reliability  
+- Containerized for easy deployment and portability
