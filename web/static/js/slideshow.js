@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function setupKeyboardShortcuts() {
     document.addEventListener('keydown', function(e) {
         // Prevent default behavior for navigation keys
-        if ([' ', 'ArrowRight', 'u', 'U', 'd', 'D', 'Escape', 's', 'S'].includes(e.key)) {
+        if ([' ', 'ArrowRight', 'u', 'U', 'd', 'D', 'm', 'M', 'Escape', 's', 'S'].includes(e.key)) {
             e.preventDefault();
             
             // Handle different keys
@@ -37,6 +37,12 @@ function setupKeyboardShortcuts() {
                 case 'D':
                     // Delete thumbnail (without confirmation)
                     deleteMovie();
+                    break;
+                
+                case 'm':
+                case 'M':
+                    // Archive thumbnail
+                    archiveMovie();
                     break;
                 
                 case 's':
@@ -103,7 +109,7 @@ function skipToNext() {
 
 // Delete movie without confirmation
 function deleteMovie() {
-    const form = document.getElementById('delete-form');
+    const form = document.querySelector('form[action*="delete"]');
     if (form) {
         const buttonElement = form.querySelector('button');
         
@@ -131,12 +137,28 @@ function deleteMovie() {
     }
 }
 
+// Archive movie without confirmation
+function archiveMovie() {
+    const form = document.querySelector('form[action*="archive"]');
+    if (form) {
+        const buttonElement = form.querySelector('button');
+        
+        // Only process if the button is not disabled
+        if (buttonElement && !buttonElement.disabled) {
+            // For archival, always navigate to next
+            submitFormAjax(form, function() {
+                navigateToNext();
+            });
+        }
+    }
+}
+
 // Setup form AJAX submissions
 function setupAjaxForms() {
-    // Delete form - no confirmation
-    const deleteForm = document.getElementById('delete-form');
-    if (deleteForm) {
-        deleteForm.addEventListener('submit', function(e) {
+    // Delete forms - no confirmation
+    const deleteForms = document.querySelectorAll('form[action*="delete"]');
+    deleteForms.forEach(form => {
+        form.addEventListener('submit', function(e) {
             e.preventDefault();
             
             // Check if this is a delete-and-finish form (last thumbnail)
@@ -158,7 +180,20 @@ function setupAjaxForms() {
                 });
             }
         });
-    }
+    });
+    
+    // Archive forms
+    const archiveForms = document.querySelectorAll('form[action*="archive"]');
+    archiveForms.forEach(form => {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // For archival, always navigate to next
+            submitFormAjax(this, function() {
+                navigateToNext();
+            });
+        });
+    });
     
     // Disable clicks on disabled Undo button
     const undoButton = document.querySelector('.nav-button.undo.disabled');

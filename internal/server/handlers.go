@@ -47,10 +47,11 @@ type SessionData struct {
 	NavigationCount int   `json:"navigation_count"` // Track actual navigation through slideshow
 	CurrentID       int64 `json:"current_id"`
 	StartedAt       int64 `json:"started_at"`
-	PreviousID      int64 `json:"previous_id"`    // Store previous thumbnail ID for single undo/navigation
-	NextID          int64 `json:"next_id"`        // Store next thumbnail ID for coordination with prefetcher
-	PendingDelete   bool  `json:"pending_delete"` // Flag indicating if PreviousID thumbnail is marked for deletion
-	DeletedSize     int64 `json:"deleted_size"`   // Total size in bytes of movies deleted in this session
+	PreviousID      int64 `json:"previous_id"`     // Store previous thumbnail ID for single undo/navigation
+	NextID          int64 `json:"next_id"`         // Store next thumbnail ID for coordination with prefetcher
+	PendingDelete   bool  `json:"pending_delete"`  // Flag indicating if PreviousID thumbnail is marked for deletion
+	PendingArchive  bool  `json:"pending_archive"` // Flag indicating if PreviousID thumbnail is marked for archival
+	DeletedSize     int64 `json:"deleted_size"`    // Total size in bytes of movies deleted in this session
 }
 
 // getSessionFromCookie retrieves and validates session data from cookie
@@ -114,6 +115,7 @@ func (s *Server) createNewSession() (*SessionData, error) {
 		PreviousID:      0,
 		NextID:          0,
 		PendingDelete:   false,
+		PendingArchive:  false,
 		DeletedSize:     0,
 	}
 
@@ -328,6 +330,45 @@ func (s *Server) handleProcessDeletions(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// handleProcessArchival triggers immediate processing of the archival queue
+func (s *Server) handleProcessArchival(w http.ResponseWriter, r *http.Request) {
+	if s.scanner.IsScanning() {
+		http.Error(w, "Cannot process archival while scanning", http.StatusConflict)
+		return
+	}
+
+	// Get the count of archived items before processing
+	stats, err := s.scanner.GetStats()
+	if err != nil {
+		s.log.WithError(err).Error("Failed to get stats")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	archivedCount := stats.Archived
+
+	// Create a timeout context derived from the application context
+	ctx, cancel := context.WithTimeout(s.appCtx, 15*time.Minute)
+
+	// Process the archival queue
+	go func() {
+		defer cancel() // Ensure context is cancelled when operation completes
+		if err := s.scanner.CleanupOrphans(ctx); err != nil {
+			s.log.WithError(err).Error("Process archival failed")
+		}
+	}()
+
+	// Set success message in flash
+	http.SetCookie(w, &http.Cookie{
+		Name:  "flash",
+		Value: fmt.Sprintf("Processing %d items for archival in the background", archivedCount),
+		Path:  "/",
+	})
+
+	// Redirect back to control page
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 // handleSlideshow renders the slideshow page
 func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 	// Check if a new session was requested
@@ -514,6 +555,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		Current                     int
 		HasPrevious                 bool
 		PendingDelete               bool
+		PendingArchive              bool
 		IsLastThumbnail             bool
 		SessionDeletedSize          int64
 		SessionDeletedSizeFormatted string
@@ -523,6 +565,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		Current:                     position,
 		HasPrevious:                 session.PreviousID > 0 && session.PreviousID != session.CurrentID,
 		PendingDelete:               session.PendingDelete,
+		PendingArchive:              session.PendingArchive,
 		IsLastThumbnail:             isLastThumbnail,
 		SessionDeletedSize:          session.DeletedSize,
 		SessionDeletedSizeFormatted: formatBytes(session.DeletedSize),
@@ -576,6 +619,15 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 			}
 			// Clear the pending deletion
 			session.PendingDelete = false
+		} else if session.PendingArchive {
+			// Commit pending archival when moving to next
+			if err := s.db.MarkForArchivalByID(session.PreviousID); err != nil {
+				s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit pending archival")
+			} else {
+				s.log.WithField("thumbnail_id", session.PreviousID).Debug("Committed pending archival to database")
+			}
+			// Clear the pending archival
+			session.PendingArchive = false
 		} else {
 			// Mark the previous thumbnail as viewed (delayed from last navigation)
 			if err := s.db.MarkAsViewedByID(session.PreviousID); err != nil {
@@ -716,26 +768,35 @@ func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request)
 	currentID := session.CurrentID
 
 	// Check if there's a pending deletion to undo - if so, always clear it regardless of current position
-	if session.PendingDelete {
-		// This is an undo operation - clear the pending deletion and navigate back to deleted thumbnail
-		deletedThumbnailID := session.PreviousID
+	if session.PendingDelete || session.PendingArchive {
+		// This is an undo operation - clear the pending operation and navigate back to the thumbnail
+		operationThumbnailID := session.PreviousID
 
-		s.log.WithFields(logrus.Fields{
-			"thumbnail": deletedThumbnailID,
-		}).Info("Undoing pending deletion")
+		if session.PendingDelete {
+			s.log.WithFields(logrus.Fields{
+				"thumbnail": operationThumbnailID,
+			}).Info("Undoing pending deletion")
+		} else {
+			s.log.WithFields(logrus.Fields{
+				"thumbnail": operationThumbnailID,
+			}).Info("Undoing pending archival")
+		}
 
-		// Verify the deleted thumbnail still exists and is not permanently deleted
-		if deletedThumbnailID > 0 {
-			deletedThumbnail, err := s.db.GetByID(deletedThumbnailID)
-			if err == nil && deletedThumbnail != nil && deletedThumbnail.Status != models.StatusDeleted {
-				// Navigate back to the previously deleted thumbnail
-				session.CurrentID = deletedThumbnailID
+		// Verify the thumbnail still exists and is not permanently processed
+		if operationThumbnailID > 0 {
+			operationThumbnail, err := s.db.GetByID(operationThumbnailID)
+			if err == nil && operationThumbnail != nil &&
+				operationThumbnail.Status != models.StatusDeleted &&
+				operationThumbnail.Status != models.StatusArchived {
+				// Navigate back to the previously marked thumbnail
+				session.CurrentID = operationThumbnailID
 				session.NextID = currentID // Save current thumbnail as next for navigation coordination
 			}
 		}
 
-		// Clear the pending deletion from session
+		// Clear the pending operations from session
 		session.PendingDelete = false
+		session.PendingArchive = false
 		session.PreviousID = 0 // Reset previous ID so undo button gets disabled
 
 		// Save the updated session
@@ -761,9 +822,11 @@ func (s *Server) handleSlideshowPrevious(w http.ResponseWriter, r *http.Request)
 
 	// With single undo, we only check the previous ID
 	if session.PreviousID > 0 {
-		// Check if this thumbnail still exists and is not deleted
+		// Check if this thumbnail still exists and is not deleted or archived
 		prevThumbnail, err := s.db.GetByID(session.PreviousID)
-		if err == nil && prevThumbnail != nil && prevThumbnail.Status != models.StatusDeleted {
+		if err == nil && prevThumbnail != nil &&
+			prevThumbnail.Status != models.StatusDeleted &&
+			prevThumbnail.Status != models.StatusArchived {
 			prevID = session.PreviousID
 			validPrevFound = true
 		}
@@ -865,7 +928,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Before setting up deletion, handle any previous thumbnails that need to be marked as viewed
-	// and any existing pending deletions
+	// and any existing pending deletions or archival
 	if session.PendingDelete && session.PreviousID != 0 {
 		// If there's already a pending deletion, commit it to the database first
 		// Get the thumbnail to obtain its file size before marking for deletion
@@ -894,6 +957,18 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		// Clear the pending deletion state
 		session.PendingDelete = false
 		session.PreviousID = 0
+	} else if session.PendingArchive && session.PreviousID != 0 {
+		// If there's already a pending archival, commit it to the database first
+		if err := s.db.MarkForArchivalByID(session.PreviousID); err != nil {
+			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit pending archival")
+			// Continue anyway - don't fail the current operation
+		} else {
+			s.log.WithField("thumbnail_id", session.PreviousID).Debug("Committed pending archival to database")
+		}
+
+		// Clear the pending archival state
+		session.PendingArchive = false
+		session.PreviousID = 0
 	}
 
 	// Now check if there's a previous thumbnail that should be marked as viewed
@@ -910,6 +985,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	// Mark the current thumbnail for deletion in the session only (not in database yet)
 	session.PreviousID = thumbnail.ID // Set as previous for undo functionality
 	session.PendingDelete = true      // Flag that PreviousID is pending deletion
+	session.PendingArchive = false    // Clear any pending archival
 
 	// Save the updated session
 	if err := s.saveSessionToCookie(w, session); err != nil {
@@ -920,6 +996,106 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		"movie":        thumbnail.MoviePath,
 		"thumbnail_id": thumbnail.ID,
 	}).Debug("Marked movie for deletion in session (pending)")
+
+	// If ajax request, return JSON response
+	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		return
+	}
+
+	// Otherwise redirect to next (no longer passing current ID)
+	http.Redirect(w, r, "/slideshow/next", http.StatusSeeOther)
+}
+
+// handleArchive marks a movie for archival in the session (soft archive with undo capability)
+func (s *Server) handleArchive(w http.ResponseWriter, r *http.Request) {
+	// Require valid session - redirect to /slideshow if none found
+	session, ok := s.requireValidSession(w, r)
+	if !ok {
+		return // already redirected
+	}
+
+	// Use current ID from session
+	thumbnailID := session.CurrentID
+	if thumbnailID == 0 {
+		http.Error(w, "No current thumbnail in session", http.StatusBadRequest)
+		return
+	}
+
+	// Get the thumbnail record
+	thumbnail, err := s.db.GetByID(thumbnailID)
+	if err != nil {
+		s.log.WithError(err).WithField("thumbnail_id", thumbnailID).Error("Failed to get thumbnail")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if thumbnail == nil {
+		http.Error(w, "Thumbnail not found", http.StatusNotFound)
+		return
+	}
+
+	// Before setting up archival, handle any previous thumbnails that need to be marked as viewed
+	// and any existing pending operations
+	if session.PendingDelete && session.PreviousID != 0 {
+		// If there's already a pending deletion, commit it to the database first
+		deletedThumbnail, err := s.db.GetByID(session.PreviousID)
+		if err != nil {
+			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to get thumbnail for deletion size tracking")
+		}
+
+		if err := s.db.MarkForDeletionByID(session.PreviousID); err != nil {
+			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit pending deletion")
+		} else {
+			s.log.WithField("thumbnail_id", session.PreviousID).Debug("Committed pending deletion to database")
+
+			// Add the file size to the session's deleted size counter
+			if deletedThumbnail != nil {
+				session.DeletedSize += deletedThumbnail.FileSize
+			}
+		}
+
+		// Clear the pending deletion state
+		session.PendingDelete = false
+		session.PreviousID = 0
+	} else if session.PendingArchive && session.PreviousID != 0 {
+		// If there's already a pending archival, commit it to the database first
+		if err := s.db.MarkForArchivalByID(session.PreviousID); err != nil {
+			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to commit pending archival")
+		} else {
+			s.log.WithField("thumbnail_id", session.PreviousID).Debug("Committed pending archival to database")
+		}
+
+		// Clear the pending archival state
+		session.PendingArchive = false
+		session.PreviousID = 0
+	}
+
+	// Now check if there's a previous thumbnail that should be marked as viewed
+	if session.PreviousID != 0 && session.PreviousID != thumbnailID {
+		if err := s.db.MarkAsViewedByID(session.PreviousID); err != nil {
+			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to mark previous thumbnail as viewed before archival")
+		} else {
+			s.log.WithField("thumbnail_id", session.PreviousID).Debug("Marked previous thumbnail as viewed before archival")
+			session.ViewedCount++
+		}
+	}
+
+	// Mark the current thumbnail for archival in the session only (not in database yet)
+	session.PreviousID = thumbnail.ID // Set as previous for undo functionality
+	session.PendingArchive = true     // Flag that PreviousID is pending archival
+	session.PendingDelete = false     // Clear any pending deletion
+
+	// Save the updated session
+	if err := s.saveSessionToCookie(w, session); err != nil {
+		s.log.WithError(err).Error("Failed to save session after marking for archival")
+	}
+
+	s.log.WithFields(logrus.Fields{
+		"movie":        thumbnail.MoviePath,
+		"thumbnail_id": thumbnail.ID,
+	}).Debug("Marked movie for archival in session (pending)")
 
 	// If ajax request, return JSON response
 	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
@@ -1031,6 +1207,8 @@ func (s *Server) handleThumbnails(w http.ResponseWriter, r *http.Request) {
 		thumbnails, err = s.db.GetErrorThumbnails()
 	} else if status == "deleted" {
 		thumbnails, err = s.db.GetDeletedThumbnails(limit)
+	} else if status == "archived" {
+		thumbnails, err = s.db.GetArchivedThumbnails(limit)
 	} else {
 		thumbnails, err = s.db.GetAllThumbnails()
 	}
@@ -1169,7 +1347,7 @@ func (s *Server) handleSlideshowFinish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// First, commit any pending viewing from previous navigation
-	if session.PreviousID != 0 && session.PreviousID != currentID && !session.PendingDelete {
+	if session.PreviousID != 0 && session.PreviousID != currentID && !session.PendingDelete && !session.PendingArchive {
 		// Mark the previous thumbnail as viewed (delayed from last navigation)
 		if err := s.db.MarkAsViewedByID(session.PreviousID); err != nil {
 			s.log.WithError(err).WithField("thumbnail_id", session.PreviousID).Error("Failed to mark previous thumbnail as viewed during finish")
@@ -1290,4 +1468,238 @@ func (s *Server) handleDeleteAndFinish(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect to control page
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// API request/response structs for video operations
+type VideoRequest struct {
+	Filename string `json:"filename"`
+}
+
+type VideoResponse struct {
+	Success     bool   `json:"success"`
+	Message     string `json:"message,omitempty"`
+	Error       string `json:"error,omitempty"`
+	Filename    string `json:"filename"`
+	ThumbnailID int64  `json:"thumbnail_id,omitempty"`
+}
+
+type VideoStatusResponse struct {
+	Success     bool   `json:"success"`
+	Error       string `json:"error,omitempty"`
+	Filename    string `json:"filename"`
+	ThumbnailID int64  `json:"thumbnail_id,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Viewed      bool   `json:"viewed,omitempty"`
+	CreatedAt   string `json:"created_at,omitempty"`
+}
+
+// handleAPIArchiveVideo marks a video for archival via API
+func (s *Server) handleAPIArchiveVideo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req VideoRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(VideoResponse{
+			Success: false,
+			Error:   "Invalid JSON request body",
+		})
+		return
+	}
+
+	// Validate filename
+	if req.Filename == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(VideoResponse{
+			Success: false,
+			Error:   "Filename is required",
+		})
+		return
+	}
+
+	// Find thumbnail by filename
+	thumbnail, err := s.db.GetByMovieFilename(req.Filename)
+	if err != nil {
+		s.log.WithError(err).WithField("filename", req.Filename).Error("Database error when searching for video")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(VideoResponse{
+			Success:  false,
+			Error:    "Internal server error",
+			Filename: req.Filename,
+		})
+		return
+	}
+
+	if thumbnail == nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(VideoResponse{
+			Success:  false,
+			Error:    "Video not found",
+			Filename: req.Filename,
+		})
+		return
+	}
+
+	// Mark for archival
+	if err := s.db.MarkForArchivalByID(thumbnail.ID); err != nil {
+		s.log.WithError(err).WithField("thumbnail_id", thumbnail.ID).Error("Failed to mark video for archival")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(VideoResponse{
+			Success:     false,
+			Error:       "Failed to mark video for archival",
+			Filename:    req.Filename,
+			ThumbnailID: thumbnail.ID,
+		})
+		return
+	}
+
+	s.log.WithFields(logrus.Fields{
+		"filename":     req.Filename,
+		"thumbnail_id": thumbnail.ID,
+	}).Info("Video marked for archival via API")
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(VideoResponse{
+		Success:     true,
+		Message:     "Video marked as archived",
+		Filename:    req.Filename,
+		ThumbnailID: thumbnail.ID,
+	})
+}
+
+// handleAPIDeleteVideo marks a video for deletion via API
+func (s *Server) handleAPIDeleteVideo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req VideoRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(VideoResponse{
+			Success: false,
+			Error:   "Invalid JSON request body",
+		})
+		return
+	}
+
+	// Validate filename
+	if req.Filename == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(VideoResponse{
+			Success: false,
+			Error:   "Filename is required",
+		})
+		return
+	}
+
+	// Find thumbnail by filename
+	thumbnail, err := s.db.GetByMovieFilename(req.Filename)
+	if err != nil {
+		s.log.WithError(err).WithField("filename", req.Filename).Error("Database error when searching for video")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(VideoResponse{
+			Success:  false,
+			Error:    "Internal server error",
+			Filename: req.Filename,
+		})
+		return
+	}
+
+	if thumbnail == nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(VideoResponse{
+			Success:  false,
+			Error:    "Video not found",
+			Filename: req.Filename,
+		})
+		return
+	}
+
+	// Check if already marked for deletion
+	if thumbnail.Status == models.StatusDeleted {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(VideoResponse{
+			Success:     false,
+			Error:       "Video is already marked for deletion",
+			Filename:    req.Filename,
+			ThumbnailID: thumbnail.ID,
+		})
+		return
+	}
+
+	// Mark for deletion
+	if err := s.db.MarkForDeletionByID(thumbnail.ID); err != nil {
+		s.log.WithError(err).WithField("thumbnail_id", thumbnail.ID).Error("Failed to mark video for deletion")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(VideoResponse{
+			Success:     false,
+			Error:       "Failed to mark video for deletion",
+			Filename:    req.Filename,
+			ThumbnailID: thumbnail.ID,
+		})
+		return
+	}
+
+	s.log.WithFields(logrus.Fields{
+		"filename":     req.Filename,
+		"thumbnail_id": thumbnail.ID,
+	}).Info("Video marked for deletion via API")
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(VideoResponse{
+		Success:     true,
+		Message:     "Video marked for deletion",
+		Filename:    req.Filename,
+		ThumbnailID: thumbnail.ID,
+	})
+}
+
+// handleAPIVideoStatus returns the status of a video via API
+func (s *Server) handleAPIVideoStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get filename from URL path
+	vars := mux.Vars(r)
+	filename := vars["filename"]
+
+	if filename == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(VideoStatusResponse{
+			Success: false,
+			Error:   "Filename is required",
+		})
+		return
+	}
+
+	// Find thumbnail by filename
+	thumbnail, err := s.db.GetByMovieFilename(filename)
+	if err != nil {
+		s.log.WithError(err).WithField("filename", filename).Error("Database error when searching for video")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(VideoStatusResponse{
+			Success:  false,
+			Error:    "Internal server error",
+			Filename: filename,
+		})
+		return
+	}
+
+	if thumbnail == nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(VideoStatusResponse{
+			Success:  false,
+			Error:    "Video not found",
+			Filename: filename,
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(VideoStatusResponse{
+		Success:     true,
+		Filename:    filename,
+		ThumbnailID: thumbnail.ID,
+		Status:      thumbnail.Status,
+		Viewed:      thumbnail.IsViewed(),
+		CreatedAt:   thumbnail.CreatedAt.Format(time.RFC3339),
+	})
 }

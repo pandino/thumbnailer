@@ -14,6 +14,7 @@ type Config struct {
 	MoviesDir     string
 	ThumbnailsDir string
 	DataDir       string
+	ArchiveDir    string
 	DBPath        string
 	TemplatesDir  string
 	StaticDir     string
@@ -46,6 +47,7 @@ func New() *Config {
 		MoviesDir:     getEnv("MOVIE_INPUT_DIR", "/movies"),
 		ThumbnailsDir: getEnv("THUMBNAIL_OUTPUT_DIR", "/thumbnails"),
 		DataDir:       getEnv("DATA_DIR", "/data"),
+		ArchiveDir:    getEnv("ARCHIVE_DIR", "/archive"),
 		TemplatesDir:  getEnv("TEMPLATES_DIR", "./web/templates"),
 		StaticDir:     getEnv("STATIC_DIR", "./web/static"),
 

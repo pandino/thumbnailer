@@ -252,11 +252,12 @@ func (m *Metrics) RecordCleanupDeletedMovies(result string, size int64) {
 }
 
 // UpdateThumbnailCounts updates the thumbnail count metrics
-func (m *Metrics) UpdateThumbnailCounts(success, error, pending, deleted int) {
+func (m *Metrics) UpdateThumbnailCounts(success, error, pending, deleted, archived int) {
 	m.ThumbnailsTotal.WithLabelValues("success").Set(float64(success))
 	m.ThumbnailsTotal.WithLabelValues("error").Set(float64(error))
 	m.ThumbnailsTotal.WithLabelValues("pending").Set(float64(pending))
 	m.ThumbnailsTotal.WithLabelValues("deleted").Set(float64(deleted))
+	m.ThumbnailsTotal.WithLabelValues("archived").Set(float64(archived))
 }
 
 // UpdateFileSizes updates the file size metrics

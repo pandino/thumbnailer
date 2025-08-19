@@ -60,6 +60,10 @@
                         <span class="stat-value">{{.Stats.Deleted}}</span>
                         <span class="stat-label">Pending Deletion</span>
                     </div>
+                    <div class="stat-box" style="background-color: rgba(52, 152, 219, 0.1); border-left: 4px solid #3498db;">
+                        <span class="stat-value">{{.Stats.Archived}}</span>
+                        <span class="stat-label">Pending Archival</span>
+                    </div>
                 </div>
             </section>
 
@@ -92,6 +96,15 @@
                         <button type="submit" class="action-button" {{if .IsScanning}}disabled{{end}} style="background-color: #e74c3c;">
                             <span class="action-icon">🗑️</span>
                             <span class="action-label">Process Deletions ({{.Stats.Deleted}})</span>
+                        </button>
+                    </form>
+                    {{end}}
+                    
+                    {{if gt .Stats.Archived 0}}
+                    <form action="/process-archival" method="post">
+                        <button type="submit" class="action-button" {{if .IsScanning}}disabled{{end}} style="background-color: #3498db;">
+                            <span class="action-icon">📦</span>
+                            <span class="action-label">Process Archival ({{.Stats.Archived}})</span>
                         </button>
                     </form>
                     {{end}}

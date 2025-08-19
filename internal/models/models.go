@@ -32,6 +32,7 @@ type Stats struct {
 	Viewed       int   `json:"viewed"`
 	Unviewed     int   `json:"unviewed"`
 	Deleted      int   `json:"deleted"`
+	Archived     int   `json:"archived"`
 	Generated    int   `json:"generated"`
 	Imported     int   `json:"imported"`
 	ViewedSize   int64 `json:"viewed_size"`   // Total file size of viewed movies in bytes
@@ -40,10 +41,11 @@ type Stats struct {
 
 // Constants for thumbnail status values
 const (
-	StatusPending = "pending"
-	StatusSuccess = "success"
-	StatusError   = "error"
-	StatusDeleted = "deleted"
+	StatusPending  = "pending"
+	StatusSuccess  = "success"
+	StatusError    = "error"
+	StatusDeleted  = "deleted"
+	StatusArchived = "archived"
 )
 
 // Constants for thumbnail source values
@@ -55,7 +57,7 @@ const (
 // ValidStatus checks if a status value is valid
 func ValidStatus(status string) bool {
 	switch status {
-	case StatusPending, StatusSuccess, StatusError, StatusDeleted:
+	case StatusPending, StatusSuccess, StatusError, StatusDeleted, StatusArchived:
 		return true
 	default:
 		return false
@@ -105,6 +107,11 @@ func (t *Thumbnail) IsError() bool {
 // IsDeleted returns true if the thumbnail is marked for deletion
 func (t *Thumbnail) IsDeleted() bool {
 	return t.Status == StatusDeleted
+}
+
+// IsArchived returns true if the thumbnail is marked for archival
+func (t *Thumbnail) IsArchived() bool {
+	return t.Status == StatusArchived
 }
 
 // IsImported returns true if the thumbnail was imported rather than generated

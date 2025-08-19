@@ -645,6 +645,15 @@ footer .version-info {
     position: relative;
 }
 
+.nav-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.nav-action-form {
+    margin: 0;
+}
+
 .nav-delete-action {
     position: absolute;
     right: 0;
@@ -690,10 +699,28 @@ footer .version-info {
     border-color: #219a52;
 }
 
+/* Archive button styling */
+.nav-button.archive {
+    background-color: #3498db;
+    border-color: #3498db;
+}
+
+.nav-button.archive:hover {
+    background-color: #2980b9;
+    border-color: #2980b9;
+}
+
 /* Undo button styling when there's a pending delete */
 .nav-button.undo.pending-delete {
     background-color: var(--error-color);
     border-color: var(--error-color);
+    animation: pendingPulse 1.5s infinite;
+}
+
+/* Undo button styling when there's a pending archive */
+.nav-button.undo.pending-archive {
+    background-color: #3498db;
+    border-color: #3498db;
     animation: pendingPulse 1.5s infinite;
 }
 

@@ -15,6 +15,7 @@ A Go application for generating and managing thumbnail mosaics from movie files.
 - **Containerized**: Runs as a containerized application with minimal dependencies
 - **Metrics Support**: Built-in Prometheus metrics for monitoring
 - **Deletion Management**: Safe deletion with undo capabilities and background processing
+- **Archive Management**: Archive movies to separate storage with background processing
 
 ## Prerequisites
 
@@ -77,6 +78,7 @@ You can configure the application by setting environment variables:
 - `MOVIE_INPUT_DIR`: Directory containing movie files (default: `/movies`)
 - `THUMBNAIL_OUTPUT_DIR`: Directory for generated thumbnails (default: `/thumbnails`)
 - `DATA_DIR`: Directory for data storage (default: `/data`)
+- `ARCHIVE_DIR`: Directory for archived movies (default: `/archive`)
 
 ### Thumbnail Generation
 - `GRID_COLS`: Number of columns in the thumbnail grid (default: `8`)
@@ -122,7 +124,7 @@ CREATE TABLE thumbnails (
 ```
 
 Key fields:
-- `status`: Current processing status ('pending', 'success', 'error', 'deleted')
+- `status`: Current processing status ('pending', 'success', 'error', 'deleted', 'archived')
 - `viewed`: Whether the thumbnail has been viewed by the user (0 or 1)
 - `source`: How the thumbnail was created ('generated' or 'imported')
 - `file_size`: Size of the movie file in bytes
@@ -134,8 +136,8 @@ The application provides two main pages:
 ### Control Page (/)
 - **Dashboard**: Displays comprehensive statistics about movies and thumbnails
 - **Session Management**: Shows current slideshow session progress if active
-- **Manual Controls**: Buttons for scanning, cleanup, and processing deletions
-- **Thumbnail Lists**: Browse thumbnails by status (unviewed, viewed, deleted, errors)
+- **Manual Controls**: Buttons for scanning, cleanup, processing deletions, and processing archival
+- **Thumbnail Lists**: Browse thumbnails by status (unviewed, viewed, deleted, archived, errors)
 - **Real-time Updates**: Dynamic loading of thumbnail data via JavaScript
 - **Slideshow Launcher**: Start new slideshow sessions from unviewed thumbnails
 
@@ -147,6 +149,7 @@ The application provides two main pages:
   - **→** (Right arrow) or **Space**: Mark as viewed and go to next thumbnail
   - **U**: Undo last action (single-level undo)
   - **D**: Delete current thumbnail/movie
+  - **M**: Archive current thumbnail/movie
   - **S**: Skip to next thumbnail without marking as viewed
   - **Esc**: Return to control page
 
@@ -167,6 +170,9 @@ The application provides several API endpoints for programmatic access:
 - `GET /api/thumbnails` - List thumbnails (supports filtering by status, viewed state)
 - `GET /api/thumbnails/{id}` - Get specific thumbnail details
 - `GET /api/slideshow/next-image` - Preload next slideshow image
+- `POST /api/v1/video/archive` - Archive a video by filename
+- `POST /api/v1/video/delete` - Delete a video by filename
+- `GET /api/v1/video/status/{filename}` - Get video status by filename
 
 For detailed monitoring capabilities, see `METRICS.md` for comprehensive Prometheus metrics documentation.
 

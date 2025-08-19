@@ -95,6 +95,7 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/cleanup", s.handleCleanup).Methods("POST")
 	s.router.HandleFunc("/reset-views", s.handleResetViews).Methods("POST")
 	s.router.HandleFunc("/process-deletions", s.handleProcessDeletions).Methods("POST")
+	s.router.HandleFunc("/process-archival", s.handleProcessArchival).Methods("POST")
 	s.router.HandleFunc("/undo-delete", s.handleUndoDelete).Methods("POST")
 
 	// Slideshow routes
@@ -103,6 +104,7 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/slideshow/previous", s.handleSlideshowPrevious).Methods("GET")
 	s.router.HandleFunc("/slideshow/mark-viewed", s.handleMarkViewed).Methods("POST")
 	s.router.HandleFunc("/slideshow/delete", s.handleDelete).Methods("POST")
+	s.router.HandleFunc("/slideshow/archive", s.handleArchive).Methods("POST")
 	s.router.HandleFunc("/slideshow/finish", s.handleSlideshowFinish).Methods("GET")
 	s.router.HandleFunc("/slideshow/delete-and-finish", s.handleDeleteAndFinish).Methods("POST")
 
@@ -111,6 +113,11 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/api/thumbnails", s.handleThumbnails).Methods("GET")
 	s.router.HandleFunc("/api/thumbnails/{id}", s.handleThumbnail).Methods("GET")
 	s.router.HandleFunc("/api/slideshow/next-image", s.handleSlideshowNextImage).Methods("GET")
+
+	// API v1 routes for video operations
+	s.router.HandleFunc("/api/v1/video/archive", s.handleAPIArchiveVideo).Methods("POST")
+	s.router.HandleFunc("/api/v1/video/delete", s.handleAPIDeleteVideo).Methods("POST")
+	s.router.HandleFunc("/api/v1/video/status/{filename}", s.handleAPIVideoStatus).Methods("GET")
 
 	// Metrics endpoint
 	s.router.Handle("/metrics", promhttp.Handler()).Methods("GET")
@@ -218,7 +225,7 @@ func (s *Server) UpdateMetricsFromStats() {
 	}
 
 	// Update thumbnail counts
-	s.metrics.UpdateThumbnailCounts(stats.Success, stats.Error, stats.Pending, stats.Deleted)
+	s.metrics.UpdateThumbnailCounts(stats.Success, stats.Error, stats.Pending, stats.Deleted, stats.Archived)
 
 	// Update file sizes
 	s.metrics.UpdateFileSizes(stats.ViewedSize, stats.UnviewedSize)

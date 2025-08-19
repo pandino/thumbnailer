@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -381,11 +382,23 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 }
 
 // CleanupOrphans removes database entries for missing movies, orphaned thumbnails,
-// and processes items marked for deletion
+// and processes items marked for deletion and archival
 func (s *Scanner) CleanupOrphans(ctx context.Context) error {
-	s.log.Info("Cleaning up orphaned entries, thumbnails, and processing deletion queue")
+	s.log.Info("Cleaning up orphaned entries, thumbnails, and processing deletion and archival queues")
 
-	// First, process items marked for deletion (skip if deletion is disabled)
+	// First, process items marked for archival (move to archive directory)
+	if err := s.processArchivedItems(ctx); err != nil {
+		s.log.WithError(err).Warn("Warning during archived items processing")
+		// Check if the context is done before continuing
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// Continue with other cleanup steps
+		}
+	}
+
+	// Second, process items marked for deletion (skip if deletion is disabled)
 	if !s.cfg.DisableDeletion {
 		if err := s.processDeletedItems(ctx); err != nil {
 			s.log.WithError(err).Error("Error processing deleted items")
@@ -593,6 +606,148 @@ func (s *Scanner) processDeletedItems(ctx context.Context) error {
 	}
 
 	s.log.Infof("Deleted %d movies with total size of %d bytes from deletion queue", deletedCount, deletedSize)
+	return nil
+}
+
+// processArchivedItems processes all items marked for archival
+func (s *Scanner) processArchivedItems(ctx context.Context) error {
+	// Get all thumbnails marked for archival
+	thumbnails, err := s.db.GetArchivedThumbnails(0)
+	if err != nil {
+		return fmt.Errorf("failed to get archived thumbnails: %w", err)
+	}
+
+	s.log.Infof("Processing %d items marked for archival", len(thumbnails))
+
+	var archivedCount int
+	var archivedSize int64
+	var errorCount int
+
+	// Create archive directory if it doesn't exist
+	if err := os.MkdirAll(s.cfg.ArchiveDir, 0755); err != nil {
+		return fmt.Errorf("failed to create archive directory: %w", err)
+	}
+
+	for i, thumbnail := range thumbnails {
+		// Check for context cancellation periodically
+		if i%10 == 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				// Continue processing
+			}
+		}
+
+		// Get the source and destination paths
+		sourcePath := filepath.Join(s.cfg.MoviesDir, thumbnail.MoviePath)
+		// Keep the same relative structure in archive
+		archivePath := filepath.Join(s.cfg.ArchiveDir, thumbnail.MoviePath)
+
+		// Check if source file exists
+		if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+			s.log.WithField("movie", sourcePath).Warn("Movie file does not exist, removing from database")
+			// Remove from database since file doesn't exist
+			if err := s.db.DeleteThumbnail(thumbnail.MoviePath); err != nil {
+				s.log.WithError(err).WithField("movie", thumbnail.MoviePath).Error("Failed to delete missing movie from database")
+			}
+			continue
+		}
+
+		// Create the archive directory structure if needed
+		archiveDir := filepath.Dir(archivePath)
+		if err := os.MkdirAll(archiveDir, 0755); err != nil {
+			s.log.WithError(err).WithField("archive_dir", archiveDir).Error("Failed to create archive subdirectory")
+			errorCount++
+			continue
+		}
+
+		// Copy the file to archive directory
+		if err := s.copyFile(sourcePath, archivePath); err != nil {
+			s.log.WithError(err).WithFields(logrus.Fields{
+				"source":  sourcePath,
+				"archive": archivePath,
+			}).Error("Failed to copy movie to archive directory")
+			errorCount++
+			continue
+		}
+
+		s.log.WithFields(logrus.Fields{
+			"source":  sourcePath,
+			"archive": archivePath,
+		}).Info("Copied movie to archive directory")
+
+		// If copy was successful, delete the original file
+		if err := os.Remove(sourcePath); err != nil {
+			s.log.WithError(err).WithField("movie", sourcePath).Error("Failed to delete original movie after archival")
+			// Try to remove the copied file to avoid duplicates
+			if removeErr := os.Remove(archivePath); removeErr != nil {
+				s.log.WithError(removeErr).WithField("archive", archivePath).Error("Failed to remove copied file after original deletion failed")
+			}
+			errorCount++
+			continue
+		}
+
+		s.log.WithField("movie", sourcePath).Info("Deleted original movie file after successful archival")
+
+		// Delete the thumbnail file if it exists
+		if thumbnail.ThumbnailPath != "" {
+			thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, thumbnail.ThumbnailPath)
+			if _, err := os.Stat(thumbnailPath); err == nil {
+				if err := os.Remove(thumbnailPath); err != nil {
+					s.log.WithError(err).WithField("thumbnail", thumbnailPath).Error("Failed to delete thumbnail file")
+				} else {
+					s.log.WithField("thumbnail", thumbnailPath).Info("Deleted thumbnail file")
+				}
+			}
+		}
+
+		// Track metrics for successfully archived movie
+		archivedCount++
+		archivedSize += thumbnail.FileSize
+		s.metrics.RecordCleanupDeletedMovie("archival_queue", thumbnail.FileSize)
+
+		// Remove from database
+		if err := s.db.DeleteThumbnail(thumbnail.MoviePath); err != nil {
+			s.log.WithError(err).WithField("movie", thumbnail.MoviePath).Error("Failed to delete from database after archival")
+		}
+	}
+
+	if errorCount > 0 {
+		s.log.Warnf("Archived %d movies with total size of %d bytes from archival queue (%d errors)", archivedCount, archivedSize, errorCount)
+	} else {
+		s.log.Infof("Archived %d movies with total size of %d bytes from archival queue", archivedCount, archivedSize)
+	}
+
+	return nil
+}
+
+// copyFile copies a file from source to destination
+func (s *Scanner) copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	// Copy the file contents
+	_, err = io.Copy(destFile, sourceFile)
+	if err != nil {
+		return err
+	}
+
+	// Ensure the file is written to disk
+	err = destFile.Sync()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

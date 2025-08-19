@@ -201,6 +201,17 @@ func (d *DB) MarkForDeletionByID(id int64) error {
 	return err
 }
 
+// MarkForArchivalByID marks a thumbnail for archival by ID
+func (d *DB) MarkForArchivalByID(id int64) error {
+	_, err := d.db.Exec(`
+		UPDATE thumbnails 
+		SET status = 'archived'
+		WHERE id = ?`,
+		id,
+	)
+	return err
+}
+
 // GetByID retrieves a thumbnail by its ID
 func (d *DB) GetByID(id int64) (*models.Thumbnail, error) {
 	thumbnail := &models.Thumbnail{}
@@ -248,6 +259,28 @@ func (d *DB) GetByMoviePath(moviePath string) (*models.Thumbnail, error) {
 	return thumbnail, err
 }
 
+// GetByMovieFilename retrieves a thumbnail by its movie filename (for API endpoints)
+func (d *DB) GetByMovieFilename(movieFilename string) (*models.Thumbnail, error) {
+	thumbnail := &models.Thumbnail{}
+	err := d.db.QueryRow(`
+		SELECT 
+			id, movie_path, movie_filename, thumbnail_path, 
+			created_at, updated_at, status, viewed, 
+			width, height, duration, file_size, error_message, source
+		FROM thumbnails 
+		WHERE movie_filename = ?`,
+		movieFilename,
+	).Scan(
+		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
+		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.FileSize, &thumbnail.ErrorMessage, &thumbnail.Source,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return thumbnail, err
+}
+
 // GetByThumbnailPath retrieves a thumbnail by its thumbnail path
 func (d *DB) GetByThumbnailPath(thumbnailPath string) (*models.Thumbnail, error) {
 	thumbnail := &models.Thumbnail{}
@@ -277,7 +310,7 @@ func (d *DB) GetRandomUnviewedThumbnail() (*models.Thumbnail, error) {
 	err := d.db.QueryRow(`
 		SELECT COUNT(*) 
 		FROM thumbnails 
-		WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
+		WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND status != 'archived'
 	`).Scan(&count)
 
 	if err != nil {
@@ -306,7 +339,7 @@ func (d *DB) GetRandomUnviewedThumbnail() (*models.Thumbnail, error) {
 			created_at, updated_at, status, viewed,
 			width, height, duration, file_size, error_message, source
 		FROM thumbnails 
-		WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
+		WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND status != 'archived'
 		LIMIT 1 OFFSET ?
 	`, randomNum.Int64()).Scan(
 		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
@@ -344,7 +377,7 @@ func (d *DB) GetRandomUnviewedThumbnailExcluding(excludeIDs ...int64) (*models.T
 	countQuery := `
 		SELECT COUNT(*) 
 		FROM thumbnails 
-		WHERE status = 'success' AND viewed = 0 AND status != 'deleted'` + excludeCondition
+		WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND status != 'archived'` + excludeCondition
 
 	err := d.db.QueryRow(countQuery, excludeArgs...).Scan(&count)
 	if err != nil {
@@ -372,7 +405,7 @@ func (d *DB) GetRandomUnviewedThumbnailExcluding(excludeIDs ...int64) (*models.T
 			created_at, updated_at, status, viewed,
 			width, height, duration, file_size, error_message, source
 		FROM thumbnails 
-		WHERE status = 'success' AND viewed = 0 AND status != 'deleted'` + excludeCondition + `
+		WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND status != 'archived'` + excludeCondition + `
 		LIMIT 1 OFFSET ?`
 
 	selectArgs := append(excludeArgs, randomNum.Int64())
@@ -421,6 +454,38 @@ func (d *DB) GetDeletedThumbnails(limit int) ([]*models.Thumbnail, error) {
 	return scanThumbnails(rows)
 }
 
+// GetArchivedThumbnails retrieves thumbnails marked for archival
+// If limit > 0, only that many items will be returned
+// If limit = 0, all matching thumbnails will be returned
+func (d *DB) GetArchivedThumbnails(limit int) ([]*models.Thumbnail, error) {
+
+	var rows *sql.Rows
+	var err error
+
+	query := `
+        SELECT 
+            id, movie_path, movie_filename, thumbnail_path, 
+            created_at, updated_at, status, viewed,
+            width, height, duration, file_size, error_message, source
+        FROM thumbnails 
+        WHERE status = 'archived'
+        ORDER BY updated_at DESC`
+
+	// Add limit clause if a limit is specified
+	if limit > 0 {
+		rows, err = d.db.Query(query+" LIMIT ?", limit)
+	} else {
+		rows, err = d.db.Query(query)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanThumbnails(rows)
+}
+
 // GetFirstUnviewedThumbnail gets the first unviewed thumbnail
 func (d *DB) GetFirstUnviewedThumbnail() (*models.Thumbnail, error) {
 	thumbnail := &models.Thumbnail{}
@@ -430,7 +495,7 @@ func (d *DB) GetFirstUnviewedThumbnail() (*models.Thumbnail, error) {
             created_at, updated_at, status, viewed,
             width, height, duration, file_size, error_message, source
         FROM thumbnails 
-        WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
+        WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND status != 'archived'
         ORDER BY id ASC
         LIMIT 1
     `).Scan(
@@ -455,7 +520,7 @@ func (d *DB) GetNextUnviewedThumbnail(currentID int64) (*models.Thumbnail, error
             created_at, updated_at, status, viewed,
             width, height, duration, file_size, error_message, source
         FROM thumbnails 
-        WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND id > ?
+        WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND status != 'archived' AND id > ?
         ORDER BY id ASC
         LIMIT 1
     `, currentID).Scan(
@@ -507,7 +572,7 @@ func (d *DB) GetUnviewedThumbnailCount() (int, error) {
 	err := d.db.QueryRow(`
         SELECT COUNT(*)
         FROM thumbnails 
-        WHERE status = 'success' AND viewed = 0 AND status != 'deleted'
+        WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND status != 'archived'
     `).Scan(&count)
 
 	return count, err
@@ -519,7 +584,7 @@ func (d *DB) GetThumbnailPosition(id int64) (int, error) {
 	err := d.db.QueryRow(`
         SELECT COUNT(*) + 1
         FROM thumbnails
-        WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND id < ?
+        WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND status != 'archived' AND id < ?
     `, id).Scan(&position)
 
 	return position, err
@@ -677,6 +742,7 @@ func (d *DB) GetStats() (*models.Stats, error) {
 			SUM(CASE WHEN status = 'success' AND viewed = 1 THEN 1 ELSE 0 END) as viewed,
 			SUM(CASE WHEN status = 'success' AND viewed = 0 THEN 1 ELSE 0 END) as unviewed,
 			SUM(CASE WHEN status = 'deleted' THEN 1 ELSE 0 END) as deleted,
+			SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) as archived,
 			SUM(CASE WHEN source = 'generated' THEN 1 ELSE 0 END) as generated,
 			SUM(CASE WHEN source = 'imported' THEN 1 ELSE 0 END) as imported,
 			COALESCE(SUM(CASE WHEN status = 'success' AND viewed = 1 THEN file_size ELSE 0 END), 0) as viewed_size,
@@ -690,6 +756,7 @@ func (d *DB) GetStats() (*models.Stats, error) {
 		&stats.Viewed,
 		&stats.Unviewed,
 		&stats.Deleted,
+		&stats.Archived,
 		&stats.Generated,
 		&stats.Imported,
 		&stats.ViewedSize,

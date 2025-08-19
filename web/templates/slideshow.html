@@ -55,9 +55,9 @@
 
         <div class="slideshow-nav">
             <a href="/slideshow/previous" 
-            class="nav-button undo{{if and (not .HasPrevious) (not .PendingDelete)}} disabled{{end}}{{if .PendingDelete}} pending-delete{{end}}"
-            {{if and (not .HasPrevious) (not .PendingDelete)}}onclick="return false;"{{end}}
-            title="{{if .PendingDelete}}Undo Delete{{else}}Undo last action{{end}}">
+            class="nav-button undo{{if and (not .HasPrevious) (not .PendingDelete) (not .PendingArchive)}} disabled{{end}}{{if .PendingDelete}} pending-delete{{end}}{{if .PendingArchive}} pending-archive{{end}}"
+            {{if and (not .HasPrevious) (not .PendingDelete) (not .PendingArchive)}}onclick="return false;"{{end}}
+            title="{{if .PendingDelete}}Undo Delete{{else if .PendingArchive}}Undo Archive{{else}}Undo last action{{end}}">
                 Undo
             </a>
             
@@ -71,16 +71,22 @@
             </a>
             {{end}}
             
-            <div class="nav-delete-action">
+            <div class="nav-actions">
+                <form action="/slideshow/archive" method="post" class="nav-action-form">
+                    <button type="submit" class="nav-button archive" title="Archive movie" {{if or (eq .Thumbnail.Status "deleted") (eq .Thumbnail.Status "archived")}}disabled{{end}}>
+                        📦
+                    </button>
+                </form>
+                
                 {{if .IsLastThumbnail}}
-                <form action="/slideshow/delete-and-finish" method="post" id="delete-form">
-                    <button type="submit" class="nav-button delete" title="Delete movie and finish slideshow" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
+                <form action="/slideshow/delete-and-finish" method="post" class="nav-action-form">
+                    <button type="submit" class="nav-button delete" title="Delete movie and finish slideshow" {{if or (eq .Thumbnail.Status "deleted") (eq .Thumbnail.Status "archived")}}disabled{{end}}>
                         🗑️
                     </button>
                 </form>
                 {{else}}
-                <form action="/slideshow/delete" method="post" id="delete-form">
-                    <button type="submit" class="nav-button delete" title="Delete movie" {{if eq .Thumbnail.Status "deleted"}}disabled{{end}}>
+                <form action="/slideshow/delete" method="post" class="nav-action-form">
+                    <button type="submit" class="nav-button delete" title="Delete movie" {{if or (eq .Thumbnail.Status "deleted") (eq .Thumbnail.Status "archived")}}disabled{{end}}>
                         🗑️
                     </button>
                 </form>
@@ -103,6 +109,8 @@
                     <span class="shortcut">U</span>: 
                     {{if .PendingDelete}}
                     <span class="shortcut-value">Undo Delete</span>
+                    {{else if .PendingArchive}}
+                    <span class="shortcut-value">Undo Archive</span>
                     {{else if .HasPrevious}}
                     <span class="shortcut-value">Undo</span>
                     {{else}}
@@ -111,9 +119,18 @@
                 </span>
                 
                 <span class="shortcut-group">
+                    <span class="shortcut">M</span>: 
+                    {{if or (eq .Thumbnail.Status "deleted") (eq .Thumbnail.Status "archived")}}
+                    <span class="shortcut-disabled">Archive (Unavailable)</span>
+                    {{else}}
+                    <span class="shortcut-value">Archive</span>
+                    {{end}}
+                </span>
+                
+                <span class="shortcut-group">
                     <span class="shortcut">D</span>: 
-                    {{if eq .Thumbnail.Status "deleted"}}
-                    <span class="shortcut-disabled">Delete (Already Deleted)</span>
+                    {{if or (eq .Thumbnail.Status "deleted") (eq .Thumbnail.Status "archived")}}
+                    <span class="shortcut-disabled">Delete (Unavailable)</span>
                     {{else if .IsLastThumbnail}}
                     <span class="shortcut-value">Delete & Finish</span>
                     {{else}}
