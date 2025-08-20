@@ -4,11 +4,35 @@ This directory contains Lua scripts for MPV player that integrate with the Movie
 
 ## Scripts
 
-### `archive_movie.lua`
-Archives the currently playing movie and skips to the next video in the playlist.
+### Basic Scripts (using curl)
+- `archive_movie.lua` - Archives the currently playing movie and skips to the next video
+- `delete_movie.lua` - Marks the currently playing movie for deletion and skips to the next video
 
-### `delete_movie.lua` 
-Marks the currently playing movie for deletion and skips to the next video in the playlist.
+### Enhanced Scripts (using curl with configuration)
+- `archive_movie_enhanced.lua` - Feature-rich version with config file support
+- `delete_movie_enhanced.lua` - Feature-rich version with config file support
+
+### Native HTTP Scripts (auto-detecting HTTP libraries)
+- `archive_movie_native.lua` - Uses native Lua HTTP libraries when available, falls back to curl
+- `delete_movie_native.lua` - Uses native Lua HTTP libraries when available, falls back to curl
+
+**HTTP Library Detection Order:**
+1. **LuaSocket** (most common) - `socket.http` + `ltn12`
+2. **lua-http** (modern async) - `http.request`  
+3. **curl subprocess** (fallback) - Always available
+
+### Script Comparison
+
+| Feature | Basic | Enhanced | Native |
+|---------|-------|----------|--------|
+| **HTTP Method** | curl only | curl only | Auto-detect → curl |
+| **Configuration** | Hardcoded | config.lua | Hardcoded |
+| **Error Handling** | Basic | Advanced | Advanced |
+| **Performance** | Good | Good | Best (with native libs) |
+| **Dependencies** | curl | curl | LuaSocket/lua-http preferred |
+| **Best For** | Simple setup | Power users | Performance-focused |
+
+**Recommendation**: Start with **Basic** scripts, upgrade to **Native** for better performance if you have Lua HTTP libraries installed.
 
 ## Installation
 
@@ -86,7 +110,10 @@ local THUMBNAILER_PORT = "8080"       -- Change to your server port
 ## Requirements
 
 - **MPV Player** with Lua scripting support
-- **curl** command-line tool (for API requests)
+- **HTTP Library** (recommended but not required):
+  - **LuaSocket** (`luarocks install luasocket`) - Most efficient
+  - **lua-http** (`luarocks install http`) - Modern alternative  
+- **curl** command-line tool (fallback when native libraries unavailable)
 - **Movie Thumbnailer server** running and accessible
 - Video files must be in the Movie Thumbnailer database (already scanned)
 
@@ -96,11 +123,18 @@ local THUMBNAILER_PORT = "8080"       -- Change to your server port
 - Check MPV console (`` ` `` key) for error messages
 - Verify scripts are in the correct directory
 - Ensure key bindings are properly configured in `input.conf`
+- For native HTTP scripts: Check which HTTP method is being used in MPV console
 
 ### API connection errors  
 - Verify Movie Thumbnailer server is running
 - Check host/port configuration in scripts
 - Test API manually: `curl -X POST -H "Content-Type: application/json" -d '{"filename":"test.mp4"}' http://localhost:8080/api/v1/video/archive`
+- For LuaSocket users: Ensure `ltn12` is also installed (`luarocks install luasocket` includes it)
+
+### Performance comparison
+- **LuaSocket**: Fastest, most efficient for simple requests
+- **lua-http**: Modern, supports HTTP/2, good for complex scenarios
+- **curl subprocess**: Slower due to process overhead, but universally available
 
 ### Files not found in database
 - Ensure videos have been scanned by Movie Thumbnailer

@@ -48,6 +48,16 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${GREEN}Enhanced versions installed${NC}"
 fi
 
+# Optional: Install native HTTP versions
+read -p "Install native HTTP versions (auto-detect Lua HTTP libraries)? (y/n): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    cp archive_movie_native.lua "$MPV_SCRIPTS_DIR/"
+    cp delete_movie_native.lua "$MPV_SCRIPTS_DIR/"
+    echo -e "${GREEN}Native HTTP versions installed${NC}"
+    echo -e "${BLUE}Note: Native versions will use LuaSocket or lua-http if available, otherwise fall back to curl${NC}"
+fi
+
 # Setup input.conf
 echo -e "${YELLOW}Setting up key bindings...${NC}"
 
@@ -104,6 +114,11 @@ if [ -f "$MPV_SCRIPTS_DIR/archive_movie_enhanced.lua" ]; then
     echo "  📄 $MPV_SCRIPTS_DIR/delete_movie_enhanced.lua"
 fi
 
+if [ -f "$MPV_SCRIPTS_DIR/archive_movie_native.lua" ]; then
+    echo "  📄 $MPV_SCRIPTS_DIR/archive_movie_native.lua"
+    echo "  📄 $MPV_SCRIPTS_DIR/delete_movie_native.lua"
+fi
+
 echo
 echo -e "${BLUE}Usage:${NC}"
 echo "  🎬 Open videos in MPV player"
@@ -125,6 +140,18 @@ if command -v curl >/dev/null 2>&1; then
     fi
 else
     echo -e "${YELLOW}⚠️  curl not found. Please install curl for API functionality.${NC}"
+fi
+
+# Check for Lua HTTP libraries
+echo
+echo -e "${YELLOW}Checking for native Lua HTTP libraries...${NC}"
+if command -v luarocks >/dev/null 2>&1; then
+    echo -e "${BLUE}LuaRocks found. You can install HTTP libraries for better performance:${NC}"
+    echo "  luarocks install luasocket    # Recommended for most users"
+    echo "  luarocks install http         # Modern alternative with HTTP/2 support"
+else
+    echo -e "${YELLOW}LuaRocks not found. Native HTTP scripts will fall back to curl.${NC}"
+    echo "Consider installing LuaRocks for better performance: https://luarocks.org/"
 fi
 
 echo
