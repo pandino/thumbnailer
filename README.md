@@ -161,6 +161,7 @@ The application provides two main pages:
 - **Error Handling**: Comprehensive error handling and logging
 - **Migration Support**: Database migration capabilities
 - **Cleanup Tools**: Automatic orphan cleanup and deletion queue processing
+- **MPV Integration**: Lua scripts for archiving/deleting videos directly from MPV player
 
 ### API Endpoints
 
@@ -175,6 +176,23 @@ The application provides several API endpoints for programmatic access:
 - `GET /api/v1/video/status/{filename}` - Get video status by filename
 
 For detailed monitoring capabilities, see `METRICS.md` for comprehensive Prometheus metrics documentation.
+
+## MPV Player Integration
+
+The project includes Lua scripts for MPV player that allow you to archive and delete videos directly while watching them. See `scripts/mpv/README.md` for detailed installation and usage instructions.
+
+**Quick Setup:**
+```bash
+# Install MPV scripts  
+cd scripts/mpv
+./install.sh
+
+# Use in MPV player
+# Press 'a' to archive current movie
+# Press 'd' to mark current movie for deletion
+```
+
+The scripts automatically call the API endpoints and skip to the next video in your playlist, providing a seamless workflow for managing large video collections.
 
 ## Development
 

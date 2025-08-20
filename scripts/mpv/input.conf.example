@@ -1,0 +1,25 @@
+# MPV Input Configuration Example for Movie Thumbnailer Integration
+# Place this file at ~/.config/mpv/input.conf (Linux/macOS) or %APPDATA%\mpv\input.conf (Windows)
+# Or add these lines to your existing input.conf
+
+# Movie Thumbnailer Integration
+a script-message archive-movie    # Archive current movie and skip to next
+d script-message delete-movie     # Mark current movie for deletion and skip to next
+
+# Alternative bindings (uncomment if preferred)
+# Shift+a script-message archive-movie
+# Shift+d script-message delete-movie
+# CTRL+a script-message archive-movie  
+# CTRL+d script-message delete-movie
+# F1 script-message archive-movie
+# F2 script-message delete-movie
+
+# Standard MPV controls (for reference)
+# SPACE cycle pause                    # Toggle pause
+# LEFT  seek -10                       # Seek backward 10 seconds  
+# RIGHT seek 10                        # Seek forward 10 seconds
+# UP    seek 60                        # Seek forward 1 minute
+# DOWN  seek -60                       # Seek backward 1 minute
+# n     playlist-next                  # Next file
+# p     playlist-prev                  # Previous file
+# q     quit                          # Quit MPV
