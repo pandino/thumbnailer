@@ -82,12 +82,14 @@ local THUMBNAILER_PORT = "8080"       -- Change to your server port
 
 3. **Use keyboard shortcuts:**
    - Press `a` to archive the current movie
-   - Press `d` to mark the current movie for deletion
+   - Press `d` **twice within 3 seconds** to mark the current movie for deletion (safety feature to prevent accidental deletions)
    
 4. **Visual feedback:**
-   - Success messages appear as OSD overlays
+   - First press of `d` shows a confirmation message: "⚠️ Press 'd' again within 3s to delete: filename"
+   - Second press within 3 seconds executes the deletion and shows success/error messages
+   - If 3 seconds elapse without a second press, the deletion is cancelled
    - Scripts automatically skip to the next video after successful operations
-   - Error messages are displayed if the operation fails
+   - Error messages are displayed if operations fail
 
 ## Features
 
@@ -101,8 +103,10 @@ local THUMBNAILER_PORT = "8080"       -- Change to your server port
 
 ### Delete Script (`delete_movie.lua`)  
 - ✅ Extracts filename from current playing file
+- ✅ **Double-press confirmation** - requires pressing 'd' twice within 3 seconds to prevent accidental deletions
 - ✅ Calls `/api/v1/video/delete` endpoint
-- ✅ Shows OSD confirmation messages
+- ✅ Shows OSD confirmation messages with clear timeout indicators
+- ✅ Automatically cancels deletion if confirmation timeout expires
 - ✅ Automatically skips to next video on success
 - ✅ Handles API errors gracefully  
 - ✅ Logs operations for debugging
@@ -168,7 +172,7 @@ END script-message archive-movie
 1. **Video Management Workflow:**
    - Watch videos in MPV with playlist
    - Press `a` to archive good content
-   - Press `d` to mark unwanted content for deletion
+   - Press `d` twice within 3 seconds to mark unwanted content for deletion (safety confirmation)
    - Videos are automatically processed in the background
    - Use Movie Thumbnailer web interface for bulk operations
 
