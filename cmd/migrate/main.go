@@ -40,7 +40,7 @@ func main() {
 	}
 
 	log.Printf("Starting database migration for: %s", databasePath)
-	log.Printf("Movie directory: %s", cfg.MoviesDir)
+	log.Printf("Movie directories: %v", cfg.MoviesDirs)
 
 	// First, check if we need to add the file_size column
 	if err := ensureFileSizeColumn(databasePath); err != nil {
@@ -48,7 +48,7 @@ func main() {
 	}
 
 	// Run migration using direct SQL
-	if err := runDirectSQLMigration(databasePath, cfg.MoviesDir); err != nil {
+	if err := runDirectSQLMigration(databasePath, cfg.MoviesDirs); err != nil {
 		log.Fatalf("Migration failed: %v", err)
 	}
 
@@ -101,7 +101,7 @@ func ensureFileSizeColumn(dbPath string) error {
 	return nil
 }
 
-func runDirectSQLMigration(dbPath string, movieDir string) error {
+func runDirectSQLMigration(dbPath string, movieDirs []string) error {
 	// Open a direct connection
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
@@ -170,7 +170,7 @@ func runDirectSQLMigration(dbPath string, movieDir string) error {
 		}
 
 		// Get file info for the movie
-		fileInfo, err := os.Stat(mapMoviePath(moviePath, movieDir))
+		fileInfo, err := os.Stat(mapMoviePath(moviePath, movieDirs))
 		if err != nil {
 			if os.IsNotExist(err) {
 				missing++
@@ -221,44 +221,44 @@ func runDirectSQLMigration(dbPath string, movieDir string) error {
 	return nil
 }
 
-// mapMoviePath attempts to map a database path to the current movie directory
-func mapMoviePath(dbPath, movieDir string) string {
+// mapMoviePath attempts to map a database path to any of the provided movie directories.
+// It applies exact / basename / last-2 / last-3 heuristics per dir and returns the first hit.
+func mapMoviePath(dbPath string, movieDirs []string) string {
 	// If the path already exists as-is, use it
 	if _, err := os.Stat(dbPath); err == nil {
 		return dbPath
 	}
 
-	// Extract just the filename from the database path
 	filename := filepath.Base(dbPath)
-
-	// Try the filename directly in the movie directory
-	mappedPath := filepath.Join(movieDir, filename)
-	if _, err := os.Stat(mappedPath); err == nil {
-		return mappedPath
-	}
-
-	// If it's a nested path, try to preserve some directory structure
-	// e.g., /host/movies/genre/movie.mp4 -> /movies/genre/movie.mp4
 	pathParts := strings.Split(filepath.Clean(dbPath), string(filepath.Separator))
 
-	// Try with the last 2 parts (directory + filename)
-	if len(pathParts) >= 2 {
-		relativePath := filepath.Join(pathParts[len(pathParts)-2], pathParts[len(pathParts)-1])
-		mappedPath = filepath.Join(movieDir, relativePath)
-		if _, err := os.Stat(mappedPath); err == nil {
-			return mappedPath
+	for _, movieDir := range movieDirs {
+		// Try the filename directly in the movie directory
+		if p := filepath.Join(movieDir, filename); fileExists(p) {
+			return p
+		}
+
+		// Try with the last 2 parts (directory + filename)
+		if len(pathParts) >= 2 {
+			p := filepath.Join(movieDir, filepath.Join(pathParts[len(pathParts)-2], pathParts[len(pathParts)-1]))
+			if fileExists(p) {
+				return p
+			}
+		}
+
+		// Try with the last 3 parts
+		if len(pathParts) >= 3 {
+			p := filepath.Join(movieDir, filepath.Join(pathParts[len(pathParts)-3], pathParts[len(pathParts)-2], pathParts[len(pathParts)-1]))
+			if fileExists(p) {
+				return p
+			}
 		}
 	}
 
-	// Try with the last 3 parts (for deeper nesting)
-	if len(pathParts) >= 3 {
-		relativePath := filepath.Join(pathParts[len(pathParts)-3], pathParts[len(pathParts)-2], pathParts[len(pathParts)-1])
-		mappedPath = filepath.Join(movieDir, relativePath)
-		if _, err := os.Stat(mappedPath); err == nil {
-			return mappedPath
-		}
-	}
-
-	// If nothing works, return the original path
 	return dbPath
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }

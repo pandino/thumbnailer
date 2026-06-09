@@ -144,65 +144,75 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 	return nil
 }
 
-// findMovieFiles returns a list of all movie files in the input directory
+// findMovieFiles returns a deduplicated list of movie file paths across all configured volumes.
+// Each basename appears at most once (first volume wins on collision).
+// Volumes that don't exist on disk are logged as warnings and skipped.
 func (s *Scanner) findMovieFiles(ctx context.Context) ([]string, error) {
+	seen := make(map[string]struct{})
 	var movieFiles []string
 
-	// Check if input directory exists
-	if _, err := os.Stat(s.cfg.MoviesDir); os.IsNotExist(err) {
-		return nil, fmt.Errorf("movies directory does not exist: %s", s.cfg.MoviesDir)
-	}
-
-	// Check for context cancellation
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-		// Continue processing
-	}
-
-	// Read only the direct contents of the movies directory (no recursion)
-	entries, err := os.ReadDir(s.cfg.MoviesDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read movies directory: %w", err)
-	}
-
-	for _, entry := range entries {
-		// Check for context cancellation
+	for _, dir := range s.cfg.MoviesDirs {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
-			// Continue processing
 		}
 
-		// Skip directories - only process files in the root movies directory
-		if entry.IsDir() {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			s.log.WithField("dir", dir).Warn("Movies directory does not exist, skipping")
 			continue
 		}
 
-		// Get full path to the file
-		path := filepath.Join(s.cfg.MoviesDir, entry.Name())
-
-		// Check file extension
-		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if ext == "" {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			s.log.WithError(err).WithField("dir", dir).Warn("Failed to read movies directory, skipping")
 			continue
 		}
 
-		// Remove the dot from extension
-		ext = ext[1:]
+		for _, entry := range entries {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			default:
+			}
 
-		// Check if extension is in the allowed list
-		for _, allowedExt := range s.cfg.FileExtensions {
-			if ext == strings.ToLower(allowedExt) {
-				movieFiles = append(movieFiles, path)
-				break
+			if entry.IsDir() {
+				continue
+			}
+
+			ext := strings.ToLower(filepath.Ext(entry.Name()))
+			if ext == "" {
+				continue
+			}
+			ext = ext[1:]
+
+			for _, allowedExt := range s.cfg.FileExtensions {
+				if ext == strings.ToLower(allowedExt) {
+					basename := entry.Name()
+					if _, alreadySeen := seen[basename]; !alreadySeen {
+						seen[basename] = struct{}{}
+						movieFiles = append(movieFiles, filepath.Join(dir, basename))
+					}
+					break
+				}
 			}
 		}
 	}
 
-	return movieFiles, err
+	return movieFiles, nil
+}
+
+// resolveMoviePaths returns every absolute path across all configured volumes where a
+// file with the given basename currently exists on disk.
+func (s *Scanner) resolveMoviePaths(basename string) []string {
+	var paths []string
+	for _, dir := range s.cfg.MoviesDirs {
+		p := filepath.Join(dir, basename)
+		if _, err := os.Stat(p); err == nil {
+			paths = append(paths, p)
+		}
+	}
+	return paths
 }
 
 // processMovie generates a thumbnail for a movie file
@@ -448,10 +458,9 @@ func (s *Scanner) CleanupOrphans(ctx context.Context) error {
 			continue
 		}
 
-		// Check if movie file exists
-		moviePath := filepath.Join(s.cfg.MoviesDir, thumbnail.MoviePath)
-		if _, err := os.Stat(moviePath); os.IsNotExist(err) {
-			s.log.WithField("movie", moviePath).Info("Movie file not found, removing from database")
+		// Check if movie file exists in any volume
+		if len(s.resolveMoviePaths(thumbnail.MoviePath)) == 0 {
+			s.log.WithField("movie", thumbnail.MoviePath).Info("Movie file not found in any volume, removing from database")
 
 			// Track metrics for missing movie
 			missingMoviesSize += thumbnail.FileSize
@@ -591,21 +600,26 @@ func (s *Scanner) processDeletedItems(ctx context.Context) error {
 			}
 		}
 
-		// Delete the movie file if it exists
-		fullMoviePath := filepath.Join(s.cfg.MoviesDir, thumbnail.MoviePath)
-		if _, err := os.Stat(fullMoviePath); err == nil {
+		// Delete the movie file from every volume where it exists
+		moviePaths := s.resolveMoviePaths(thumbnail.MoviePath)
+		deleteErr := false
+		for _, fullMoviePath := range moviePaths {
 			if err := os.Remove(fullMoviePath); err != nil {
 				s.log.WithError(err).WithField("movie", fullMoviePath).Error("Failed to delete movie file")
-				// Don't remove from database on error so we can retry later
-				continue
+				deleteErr = true
+			} else {
+				s.log.WithField("movie", fullMoviePath).Info("Deleted movie file")
 			}
-			s.log.WithField("movie", fullMoviePath).Info("Deleted movie file")
-
-			// Track metrics for successfully deleted movie
-			deletedCount++
-			deletedSize += thumbnail.FileSize
-			s.metrics.RecordCleanupDeletedMovie("deletion_queue", thumbnail.FileSize)
 		}
+		if deleteErr {
+			// Don't remove from database on error so we can retry later
+			continue
+		}
+
+		// Track metrics for successfully deleted movie
+		deletedCount++
+		deletedSize += thumbnail.FileSize
+		s.metrics.RecordCleanupDeletedMovie("deletion_queue", thumbnail.FileSize)
 
 		// Remove from database
 		if err := s.db.DeleteThumbnail(thumbnail.MoviePath); err != nil {
@@ -647,20 +661,20 @@ func (s *Scanner) processArchivedItems(ctx context.Context) error {
 			}
 		}
 
-		// Get the source and destination paths
-		sourcePath := filepath.Join(s.cfg.MoviesDir, thumbnail.MoviePath)
-		// Keep the same relative structure in archive
+		// Resolve all physical copies of this movie across volumes
+		allPaths := s.resolveMoviePaths(thumbnail.MoviePath)
 		archivePath := filepath.Join(s.cfg.ArchiveDir, thumbnail.MoviePath)
 
-		// Check if source file exists
-		if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
-			s.log.WithField("movie", sourcePath).Warn("Movie file does not exist, removing from database")
-			// Remove from database since file doesn't exist
+		if len(allPaths) == 0 {
+			s.log.WithField("movie", thumbnail.MoviePath).Warn("Movie file does not exist in any volume, removing from database")
 			if err := s.db.DeleteThumbnail(thumbnail.MoviePath); err != nil {
 				s.log.WithError(err).WithField("movie", thumbnail.MoviePath).Error("Failed to delete missing movie from database")
 			}
 			continue
 		}
+
+		// Copy the first existing path to archive
+		sourcePath := allPaths[0]
 
 		// Create the archive directory structure if needed
 		archiveDir := filepath.Dir(archivePath)
@@ -685,18 +699,24 @@ func (s *Scanner) processArchivedItems(ctx context.Context) error {
 			"archive": archivePath,
 		}).Info("Copied movie to archive directory")
 
-		// If copy was successful, delete the original file
-		if err := os.Remove(sourcePath); err != nil {
-			s.log.WithError(err).WithField("movie", sourcePath).Error("Failed to delete original movie after archival")
-			// Try to remove the copied file to avoid duplicates
+		// Delete all original copies across volumes
+		deleteErr := false
+		for _, p := range allPaths {
+			if err := os.Remove(p); err != nil {
+				s.log.WithError(err).WithField("movie", p).Error("Failed to delete original movie after archival")
+				deleteErr = true
+			} else {
+				s.log.WithField("movie", p).Info("Deleted original movie file after successful archival")
+			}
+		}
+		if deleteErr {
+			// Try to remove the archive copy to avoid a partial state
 			if removeErr := os.Remove(archivePath); removeErr != nil {
 				s.log.WithError(removeErr).WithField("archive", archivePath).Error("Failed to remove copied file after original deletion failed")
 			}
 			errorCount++
 			continue
 		}
-
-		s.log.WithField("movie", sourcePath).Info("Deleted original movie file after successful archival")
 
 		// Delete the thumbnail file if it exists
 		if thumbnail.ThumbnailPath != "" {
@@ -817,9 +837,8 @@ func (s *Scanner) DeleteMovie(ctx context.Context, moviePath string) error {
 		// Continue processing
 	}
 
-	// Delete the movie file if it exists
-	fullMoviePath := filepath.Join(s.cfg.MoviesDir, thumbnail.MoviePath)
-	if _, err := os.Stat(fullMoviePath); err == nil {
+	// Delete the movie file from every volume where it exists
+	for _, fullMoviePath := range s.resolveMoviePaths(thumbnail.MoviePath) {
 		if err := os.Remove(fullMoviePath); err != nil {
 			s.log.WithError(err).WithField("movie", fullMoviePath).Error("Failed to delete movie file")
 			return fmt.Errorf("failed to delete movie file: %w", err)

@@ -11,7 +11,7 @@ import (
 // Config holds the application configuration
 type Config struct {
 	// Directory paths
-	MoviesDir     string
+	MoviesDirs    []string
 	ThumbnailsDir string
 	DataDir       string
 	ArchiveDir    string
@@ -44,7 +44,7 @@ type Config struct {
 func New() *Config {
 	config := &Config{
 		// Default directory paths
-		MoviesDir:     getEnv("MOVIE_INPUT_DIR", "/movies"),
+		MoviesDirs:    getEnvAsMovieDirs("MOVIE_INPUT_DIR", "/movies"),
 		ThumbnailsDir: getEnv("THUMBNAIL_OUTPUT_DIR", "/thumbnails"),
 		DataDir:       getEnv("DATA_DIR", "/data"),
 		ArchiveDir:    getEnv("ARCHIVE_DIR", "/archive"),
@@ -124,4 +124,24 @@ func getEnvAsDuration(key string, defaultValue string) time.Duration {
 	}
 	duration, _ := time.ParseDuration(defaultValue)
 	return duration
+}
+
+// getEnvAsMovieDirs parses a comma-separated list of directories, trimming whitespace
+// and dropping empty entries. Falls back to a single-element slice of defaultValue.
+func getEnvAsMovieDirs(key, defaultValue string) []string {
+	raw := defaultValue
+	if value, exists := os.LookupEnv(key); exists {
+		raw = value
+	}
+	parts := strings.Split(raw, ",")
+	var dirs []string
+	for _, p := range parts {
+		if d := strings.TrimSpace(p); d != "" {
+			dirs = append(dirs, d)
+		}
+	}
+	if len(dirs) == 0 {
+		return []string{defaultValue}
+	}
+	return dirs
 }
