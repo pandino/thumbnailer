@@ -72,8 +72,8 @@
                 <div class="actions-grid">
                     <form action="/scan" method="post">
                         <button type="submit" class="action-button" {{if .IsScanning}}disabled{{end}}>
-                            <span class="action-icon">🔍</span>
-                            <span class="action-label">Scan Movies</span>
+                            <span class="action-icon">{{if .IsScanning}}⏳{{else}}🔍{{end}}</span>
+                            <span class="action-label">{{if .IsScanning}}Scanning…{{else}}Scan Movies{{end}}</span>
                         </button>
                     </form>
                     
@@ -92,16 +92,24 @@
                     </form>
                     
                     {{if gt .Stats.Deleted 0}}
-                    <form action="/process-deletions" method="post">
+                    <form action="/process-deletions" method="post"
+                          data-confirm-title="Delete {{.Stats.Deleted}} file(s)?"
+                          data-confirm-message="This will permanently delete the files from disk. This cannot be undone."
+                          data-confirm-label="Delete Files"
+                          data-confirm-color="#e74c3c">
                         <button type="submit" class="action-button" {{if .IsScanning}}disabled{{end}} style="background-color: #e74c3c;">
                             <span class="action-icon">🗑️</span>
                             <span class="action-label">Process Deletions ({{.Stats.Deleted}})</span>
                         </button>
                     </form>
                     {{end}}
-                    
+
                     {{if gt .Stats.Archived 0}}
-                    <form action="/process-archival" method="post">
+                    <form action="/process-archival" method="post"
+                          data-confirm-title="Archive {{.Stats.Archived}} file(s)?"
+                          data-confirm-message="This will move the files to the archive directory. This cannot be undone."
+                          data-confirm-label="Archive Files"
+                          data-confirm-color="#3498db">
                         <button type="submit" class="action-button" {{if .IsScanning}}disabled{{end}} style="background-color: #3498db;">
                             <span class="action-icon">📦</span>
                             <span class="action-label">Process Archival ({{.Stats.Archived}})</span>
@@ -143,7 +151,11 @@
                 <h2>Recently Marked for Deletion (Showing {{if lt .Stats.Deleted 10}}{{.Stats.Deleted}}{{else}}10{{end}} of {{.Stats.Deleted}})</h2>
                 <div class="deletions-info">
                     <span class="deletions-count">These items will be deleted during the next scheduled cleanup job</span>
-                    <form action="/process-deletions" method="post">
+                    <form action="/process-deletions" method="post"
+                          data-confirm-title="Delete {{.Stats.Deleted}} file(s)?"
+                          data-confirm-message="This will permanently delete the files from disk. This cannot be undone."
+                          data-confirm-label="Delete Files"
+                          data-confirm-color="#e74c3c">
                         <button type="submit" class="process-deletions-btn" {{if .IsScanning}}disabled{{end}}>
                             Process Now
                         </button>
@@ -171,6 +183,7 @@
         </footer>
     </div>
 
+    <script src="/static/js/utils.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

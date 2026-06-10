@@ -577,13 +577,19 @@ footer .version-info {
 .slideshow-info {
     text-align: center;
     flex: 1;
+    min-width: 0;
 }
 
 .movie-title {
     font-size: 1.2rem;
     font-weight: 500;
     margin-bottom: 5px;
-    display: block;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: break-word;
 }
 
 .slideshow-counter {
@@ -887,6 +893,140 @@ footer .version-info {
 .shortcut-disabled {
     color: rgba(255, 255, 255, 0.3);
     text-decoration: line-through;
+}
+
+/* Empty state messages inside thumbnail grids */
+.empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 20px;
+    color: #aaa;
+    font-style: italic;
+    font-size: 0.95rem;
+}
+
+/* Modal overlay */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+
+.modal-dialog {
+    background-color: white;
+    border-radius: var(--border-radius);
+    padding: 24px;
+    max-width: 480px;
+    width: 90%;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.slideshow-page .modal-dialog {
+    background-color: #1e1e2e;
+    color: white;
+}
+
+.modal-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.modal-message {
+    margin-bottom: 20px;
+    color: #555;
+    line-height: 1.5;
+}
+
+.slideshow-page .modal-message {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.modal-btn {
+    padding: 8px 18px;
+    border-radius: var(--border-radius);
+    border: none;
+    font-weight: 500;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: filter 0.2s;
+}
+
+.modal-btn:hover {
+    filter: brightness(0.9);
+}
+
+.modal-btn-cancel {
+    background-color: #e0e0e0;
+    color: #333;
+}
+
+.slideshow-page .modal-btn-cancel {
+    background-color: rgba(255, 255, 255, 0.15);
+    color: white;
+}
+
+/* Shortcuts table inside the help modal */
+.shortcuts-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+}
+
+.shortcuts-table td {
+    padding: 6px 8px;
+    vertical-align: top;
+}
+
+.shortcuts-table td:first-child {
+    white-space: nowrap;
+    color: rgba(255, 255, 255, 0.6);
+    width: 40%;
+}
+
+.shortcuts-table kbd {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 0.85rem;
+    font-family: inherit;
+}
+
+/* Help (?) button in slideshow header */
+.help-button {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.12);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: bold;
+    line-height: 1;
+    transition: background-color 0.2s;
+}
+
+.help-button:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Archive pending badge */
+.deletion-status.pending-archive {
+    background-color: #3498db;
 }
 
 /* Responsive Adjustments */

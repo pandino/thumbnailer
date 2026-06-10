@@ -13,13 +13,17 @@
             <div class="slideshow-info">
                 <span class="movie-title">{{.Thumbnail.MovieFilename}}</span>
                 <span class="slideshow-counter">
-                    Slide {{.Current}}/{{.Total}}{{if gt .SessionDeletedSize 0}} - Deleted {{.SessionDeletedSizeFormatted}}{{end}}
+                    Slide {{.Current}}/{{.Total}}{{if gt .SessionDeletedSize 0}} · Deleted {{.SessionDeletedSizeFormatted}}{{end}}
                 </span>
-                {{if eq .Thumbnail.Status "deleted"}}
-                <span class="deletion-status">Deleted</span>
+                {{if .PendingDelete}}
+                <span class="deletion-status">Marked for deletion — press U to undo</span>
+                {{else if .PendingArchive}}
+                <span class="deletion-status pending-archive">Marked for archival — press U to undo</span>
+                {{else if eq .Thumbnail.Status "deleted"}}
+                <span class="deletion-status">In deletion queue</span>
                 {{end}}
             </div>
-            <div class="slideshow-spacer"></div>
+            <button class="help-button" id="shortcuts-help-btn" title="Keyboard shortcuts (?)">?</button>
         </div>
 
         <div class="thumbnail-display">
@@ -54,11 +58,11 @@
         </div>
 
         <div class="slideshow-nav">
-            <a href="/slideshow/previous" 
+            <a href="/slideshow/previous"
             class="nav-button undo{{if and (not .HasPrevious) (not .PendingDelete) (not .PendingArchive)}} disabled{{end}}{{if .PendingDelete}} pending-delete{{end}}{{if .PendingArchive}} pending-archive{{end}}"
             {{if and (not .HasPrevious) (not .PendingDelete) (not .PendingArchive)}}onclick="return false;"{{end}}
             title="{{if .PendingDelete}}Undo Delete{{else if .PendingArchive}}Undo Archive{{else}}Undo last action{{end}}">
-                Undo
+                {{if .PendingDelete}}↩ Undo Delete{{else if .PendingArchive}}↶ Undo Archive{{else if .HasPrevious}}← Undo{{else}}–{{end}}
             </a>
             
             {{if .IsLastThumbnail}}
@@ -97,16 +101,16 @@
         <div class="keyboard-shortcuts">
             <p>
                 <span class="shortcut-group">
-                    <span class="shortcut">→</span> or <span class="shortcut">Space</span>: 
+                    <span class="shortcut">→</span> or <span class="shortcut">Space</span>:
                     {{if .IsLastThumbnail}}
                     <span class="shortcut-value">Finish (Mark as Viewed)</span>
                     {{else}}
                     <span class="shortcut-value">Next Random (Mark as Viewed)</span>
                     {{end}}
                 </span>
-                
+
                 <span class="shortcut-group">
-                    <span class="shortcut">U</span>: 
+                    <span class="shortcut">U</span>:
                     {{if .PendingDelete}}
                     <span class="shortcut-value">Undo Delete</span>
                     {{else if .PendingArchive}}
@@ -117,40 +121,64 @@
                     <span class="shortcut-disabled">Undo (No history)</span>
                     {{end}}
                 </span>
-                
+
                 <span class="shortcut-group">
-                    <span class="shortcut">M</span>: 
+                    <span class="shortcut">M</span>:
                     {{if or (eq .Thumbnail.Status "deleted") (eq .Thumbnail.Status "archived")}}
                     <span class="shortcut-disabled">Archive (Unavailable)</span>
                     {{else}}
                     <span class="shortcut-value">Archive</span>
                     {{end}}
                 </span>
-                
+
                 <span class="shortcut-group">
-                    <span class="shortcut">D</span>: 
+                    <span class="shortcut">D</span>:
                     {{if or (eq .Thumbnail.Status "deleted") (eq .Thumbnail.Status "archived")}}
                     <span class="shortcut-disabled">Delete (Unavailable)</span>
                     {{else if .IsLastThumbnail}}
-                    <span class="shortcut-value">Delete & Finish</span>
+                    <span class="shortcut-value">Delete &amp; Finish</span>
                     {{else}}
                     <span class="shortcut-value">Delete</span>
                     {{end}}
                 </span>
-                
+
                 <span class="shortcut-group">
-                    <span class="shortcut">S</span>: 
+                    <span class="shortcut">S</span>:
                     <span class="shortcut-value">Skip</span>
                 </span>
-                
+
                 <span class="shortcut-group">
-                    <span class="shortcut">Esc</span>: 
+                    <span class="shortcut">Esc</span>:
                     <span class="shortcut-value">Back to control</span>
+                </span>
+
+                <span class="shortcut-group">
+                    <span class="shortcut">?</span>:
+                    <span class="shortcut-value">Show shortcuts</span>
                 </span>
             </p>
         </div>
     </div>
 
+    <div id="shortcuts-modal" class="modal-overlay" style="display:none">
+        <div class="modal-dialog">
+            <div class="modal-title">Keyboard Shortcuts</div>
+            <table class="shortcuts-table">
+                <tr><td><kbd>→</kbd> / <kbd>Space</kbd></td><td>Next / Finish (mark as viewed)</td></tr>
+                <tr><td><kbd>U</kbd></td><td>Undo last action</td></tr>
+                <tr><td><kbd>D</kbd></td><td>Delete / Delete &amp; Finish</td></tr>
+                <tr><td><kbd>M</kbd></td><td>Archive</td></tr>
+                <tr><td><kbd>S</kbd></td><td>Skip (no mark)</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>Back to control</td></tr>
+                <tr><td><kbd>?</kbd></td><td>Toggle this help</td></tr>
+            </table>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-cancel" id="shortcuts-modal-close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/utils.js"></script>
     <script src="/static/js/slideshow.js"></script>
 </body>
 </html>

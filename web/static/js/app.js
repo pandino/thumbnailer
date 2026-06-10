@@ -10,6 +10,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Handle keyboard shortcuts
     setupKeyboardShortcuts();
+
+    // Wire confirm modals for destructive queue operations
+    setupDestructiveConfirmations();
 });
 
 // Load thumbnails using AJAX
@@ -43,9 +46,16 @@ function loadThumbnails(containerId, status, viewed = null) {
         });
 }
 
+const EMPTY_STATE_MESSAGES = {
+    'error-thumbnails':   'No errors — all thumbnails generated successfully.',
+    'deleted-thumbnails': 'No items pending deletion.',
+    'unviewed-thumbnails': 'No unviewed thumbnails.',
+};
+
 function renderThumbnails(container, thumbnails) {
     if (!thumbnails || thumbnails.length === 0) {
-        container.innerHTML = '<div class="no-results">No thumbnails found</div>';
+        const msg = EMPTY_STATE_MESSAGES[container.id] || 'No thumbnails found.';
+        container.innerHTML = `<p class="empty-state">${msg}</p>`;
         return;
     }
 
@@ -229,31 +239,25 @@ function formatDate(dateString) {
 // Check for flash messages (from cookies)
 function checkFlashMessages() {
     const flashCookie = getCookie('flash');
-    if (flashCookie) {
-        showFlashMessage(decodeURIComponent(flashCookie));
-        // Clear the cookie
-        document.cookie = 'flash=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-    }
+    if (!flashCookie) return;
+    showFlashMessage(decodeURIComponent(flashCookie));
+    document.cookie = 'flash=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
 }
 
-// Show flash message
-function showFlashMessage(message, type = '') {
-    const flashDiv = document.createElement('div');
-    flashDiv.className = 'flash-message';
-    if (type) {
-        flashDiv.classList.add(type);
-    }
-    flashDiv.textContent = message;
-    
-    document.body.appendChild(flashDiv);
-    
-    // Automatically remove after 5 seconds
-    setTimeout(() => {
-        flashDiv.classList.add('hiding');
-        setTimeout(() => {
-            flashDiv.remove();
-        }, 500);
-    }, 5000);
+// Intercept forms with data-confirm-* attributes and show a modal before submitting
+function setupDestructiveConfirmations() {
+    document.querySelectorAll('form[data-confirm-message]').forEach(form => {
+        form.addEventListener('submit', async e => {
+            e.preventDefault();
+            const title   = form.dataset.confirmTitle   || 'Are you sure?';
+            const message = form.dataset.confirmMessage;
+            const label   = form.dataset.confirmLabel   || 'Confirm';
+            const color   = form.dataset.confirmColor   || '#e74c3c';
+            if (await showConfirmModal(title, message, label, color)) {
+                form.submit();
+            }
+        });
+    });
 }
 
 // Get cookie value by name

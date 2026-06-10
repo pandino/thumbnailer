@@ -2,10 +2,13 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Setup keyboard shortcuts
     setupKeyboardShortcuts();
-    
+
     // Setup forms for AJAX submission
     setupAjaxForms();
-    
+
+    // Setup shortcuts help modal
+    setupShortcutsHelp();
+
     // Set focus to the page for keyboard shortcuts
     document.body.focus();
 });
@@ -14,46 +17,43 @@ document.addEventListener('DOMContentLoaded', function() {
 function setupKeyboardShortcuts() {
     document.addEventListener('keydown', function(e) {
         // Prevent default behavior for navigation keys
-        if ([' ', 'ArrowRight', 'u', 'U', 'd', 'D', 'm', 'M', 'Escape', 's', 'S'].includes(e.key)) {
+        if ([' ', 'ArrowRight', 'u', 'U', 'd', 'D', 'm', 'M', 'Escape', 's', 'S', '?'].includes(e.key)) {
             e.preventDefault();
-            
-            // Handle different keys
+
             switch (e.key) {
                 case ' ':
                 case 'ArrowRight':
-                    // Next thumbnail (now marks as viewed)
                     navigateToNext();
                     break;
-                
+
                 case 'u':
                 case 'U':
-                    // Undo - only if not disabled
                     if (!isUndoDisabled()) {
                         navigateToUndo();
                     }
                     break;
-                
+
                 case 'd':
                 case 'D':
-                    // Delete thumbnail (without confirmation)
                     deleteMovie();
                     break;
-                
+
                 case 'm':
                 case 'M':
-                    // Archive thumbnail
                     archiveMovie();
                     break;
-                
+
                 case 's':
                 case 'S':
-                    // Skip to next thumbnail without marking as viewed
                     skipToNext();
                     break;
-                
+
                 case 'Escape':
-                    // Back to control page
                     window.location.href = '/';
+                    break;
+
+                case '?':
+                    toggleShortcutsHelp();
                     break;
             }
         }
@@ -93,17 +93,12 @@ function navigateToUndo() {
 
 // Skip to next thumbnail without marking as viewed
 function skipToNext() {
-    // Check if this is the last thumbnail by looking for finish button
     const finishButton = document.querySelector('.nav-button.finish');
     if (finishButton) {
-        // Can't skip the last thumbnail - just show a message
-        alert('Cannot skip the last thumbnail. Use Finish or Delete & Finish instead.');
+        showFlashMessage('Last slide — use Finish or Delete & Finish to end the session.', 'warning');
         return;
     }
-    
-    // Navigate to next with skip parameter (no longer need current ID)
-    window.location.href = `/slideshow/next?skip=true`;
-    // Preload the next image after navigation
+    window.location.href = '/slideshow/next?skip=true';
     setTimeout(preloadNextImage, 1000);
 }
 
@@ -215,30 +210,22 @@ function submitFormAjax(form, callback) {
     
     xhr.onload = function() {
         if (xhr.status >= 200 && xhr.status < 400) {
-            // Success
             let response = null;
             try {
-                // Try to parse JSON response
-                if (xhr.responseText) {
-                    response = JSON.parse(xhr.responseText);
-                }
+                if (xhr.responseText) response = JSON.parse(xhr.responseText);
             } catch (e) {
-                // Not JSON, that's okay
+                // not JSON, that's fine
             }
-            
-            if (callback) {
-                callback(response);
-            }
+            if (callback) callback(response);
         } else {
-            // Error
             console.error('Form submission failed:', xhr.statusText);
-            alert('Action failed: ' + xhr.statusText);
+            showFlashMessage('Action failed: ' + xhr.statusText, 'error');
         }
     };
-    
+
     xhr.onerror = function() {
         console.error('Network error during form submission');
-        alert('Network error. Please try again.');
+        showFlashMessage('Network error. Please try again.', 'error');
     };
     
     xhr.send(formData);
@@ -280,3 +267,24 @@ function preloadNextImage() {
 
 // Call preload function when page loads
 setTimeout(preloadNextImage, 1000);
+
+// Shortcuts help modal
+function setupShortcutsHelp() {
+    const helpBtn = document.getElementById('shortcuts-help-btn');
+    const modal   = document.getElementById('shortcuts-modal');
+    if (!helpBtn || !modal) return;
+
+    helpBtn.addEventListener('click', () => toggleShortcutsHelp());
+    document.getElementById('shortcuts-modal-close').addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+    modal.addEventListener('click', e => {
+        if (e.target === modal) modal.style.display = 'none';
+    });
+}
+
+function toggleShortcutsHelp() {
+    const modal = document.getElementById('shortcuts-modal');
+    if (!modal) return;
+    modal.style.display = modal.style.display === 'flex' ? 'none' : 'flex';
+}
