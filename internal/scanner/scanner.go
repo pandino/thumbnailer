@@ -114,9 +114,12 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 			continue
 		}
 
-		// Process the movie in parallel
+		// Process the movie in parallel; errors are per-movie and must not cancel the group
 		g.Go(func() error {
-			return s.processMovie(gctx, moviePath, current, totalfiles)
+			if err := s.processMovie(gctx, moviePath, current, totalfiles); err != nil {
+				s.log.WithError(err).WithField("movie", moviePath).Error("Failed to process movie, skipping")
+			}
+			return nil
 		})
 	}
 
