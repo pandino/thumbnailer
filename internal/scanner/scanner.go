@@ -109,8 +109,8 @@ func (s *Scanner) ScanMovies(ctx context.Context) error {
 			continue
 		}
 
-		// Skip if thumbnail already exists and is successful, or if it's marked for deletion or archival
-		if thumbnail != nil && (thumbnail.Status == models.StatusSuccess || thumbnail.Status == models.StatusDeleted || thumbnail.Status == models.StatusArchived) {
+		// Skip if thumbnail already exists and is successful, previously failed, or is marked for deletion or archival
+		if thumbnail != nil && (thumbnail.Status == models.StatusSuccess || thumbnail.Status == models.StatusError || thumbnail.Status == models.StatusDeleted || thumbnail.Status == models.StatusArchived) {
 			continue
 		}
 

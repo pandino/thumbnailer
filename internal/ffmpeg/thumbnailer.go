@@ -319,6 +319,15 @@ func (t *Thumbnailer) generateThumbnailGrid(ctx context.Context, moviePath, outp
 	return nil
 }
 
+// maxFFmpegErrorMatches caps how many matched error lines get joined into the
+// returned message. Corrupt/truncated input can make ffmpeg emit one decode
+// error per frame (thousands of lines), which previously produced multi-hundred-KB
+// log lines and blew through the Grafana Cloud log quota.
+const maxFFmpegErrorMatches = 3
+
+// maxFFmpegErrorLen caps the length of the returned error message.
+const maxFFmpegErrorLen = 500
+
 // parseFFmpegError extracts relevant error information from ffmpeg output
 func parseFFmpegError(stderr string) string {
 	// Check for common error patterns
@@ -331,9 +340,13 @@ func parseFFmpegError(stderr string) string {
 
 	for _, pattern := range patterns {
 		re := regexp.MustCompile(pattern)
-		matches := re.FindAllString(stderr, -1)
+		matches := re.FindAllString(stderr, maxFFmpegErrorMatches)
 		if len(matches) > 0 {
-			return strings.Join(matches, "; ")
+			msg := strings.Join(matches, "; ")
+			if len(msg) > maxFFmpegErrorLen {
+				msg = msg[:maxFFmpegErrorLen] + "... (truncated)"
+			}
+			return msg
 		}
 	}
 
