@@ -301,6 +301,10 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 
 		// Get video metadata to complete the thumbnail record
 		metadata, err := s.thumbnailer.GetVideoMetadata(ctx, moviePath)
+		if err != nil && ctx.Err() != nil {
+			// Interrupted (shutdown or work window closed): leave the movie for the next scan
+			return ctx.Err()
+		}
 		if err != nil {
 			s.log.WithError(err).WithField("movie", moviePath).Error("Failed to get video metadata for import")
 			thumbnail.Status = models.StatusError
@@ -351,6 +355,13 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 	start := time.Now()
 	generatedThumbnail, err := s.thumbnailer.CreateThumbnail(ctx, moviePath, s.db)
 	thumbnailDuration := time.Since(start)
+
+	if err != nil && ctx.Err() != nil {
+		// Interrupted (shutdown or work window closed): keep it pending so the
+		// next scan retries it instead of marking it as permanently failed
+		s.log.WithField("movie", moviePath).Info("Thumbnail generation interrupted, will retry on next scan")
+		return ctx.Err()
+	}
 
 	if err != nil {
 		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to create thumbnail")

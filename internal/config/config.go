@@ -33,6 +33,13 @@ type Config struct {
 	ScanInterval time.Duration
 	Debug        bool
 
+	// Work window: scheduled scans, thumbnail generation and archive/delete
+	// processing only run from WorkWindowStart (inclusive) to WorkWindowEnd
+	// (exclusive), in hours of local time (set TZ). The window may wrap past
+	// midnight; equal start and end means no restriction.
+	WorkWindowStart int
+	WorkWindowEnd   int
+
 	// Deletion worker settings
 	DisableDeletion bool
 
@@ -65,6 +72,9 @@ func New() *Config {
 		ScanInterval: getEnvAsDuration("SCAN_INTERVAL", "1h"),
 		Debug:        getEnvAsBool("DEBUG", false),
 
+		WorkWindowStart: getEnvAsHour("WORK_WINDOW_START", 11),
+		WorkWindowEnd:   getEnvAsHour("WORK_WINDOW_END", 20),
+
 		// Default deletion worker settings
 		DisableDeletion: getEnvAsBool("DISABLE_DELETION", false),
 
@@ -82,6 +92,33 @@ func New() *Config {
 	return config
 }
 
+// InWorkWindow reports whether t falls inside the work window.
+func (c *Config) InWorkWindow(t time.Time) bool {
+	start, end := c.WorkWindowStart%24, c.WorkWindowEnd%24
+	if start == end {
+		return true
+	}
+	h := t.Hour()
+	if start < end {
+		return h >= start && h < end
+	}
+	return h >= start || h < end
+}
+
+// WorkWindowEndAfter returns the first time after t at which the work window
+// closes, or the zero time if the window is always open.
+func (c *Config) WorkWindowEndAfter(t time.Time) time.Time {
+	start, end := c.WorkWindowStart%24, c.WorkWindowEnd%24
+	if start == end {
+		return time.Time{}
+	}
+	closes := time.Date(t.Year(), t.Month(), t.Day(), end, 0, 0, 0, t.Location())
+	if !closes.After(t) {
+		closes = closes.AddDate(0, 0, 1)
+	}
+	return closes
+}
+
 // Helper functions to get environment variables with defaults
 
 func getEnv(key, defaultValue string) string {
@@ -96,6 +133,14 @@ func getEnvAsInt(key string, defaultValue int) int {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
 		}
+	}
+	return defaultValue
+}
+
+// getEnvAsHour reads an hour of the day (0-24); invalid values fall back to the default.
+func getEnvAsHour(key string, defaultValue int) int {
+	if h := getEnvAsInt(key, defaultValue); h >= 0 && h <= 24 {
+		return h
 	}
 	return defaultValue
 }

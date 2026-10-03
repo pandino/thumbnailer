@@ -92,6 +92,7 @@ You can configure the application by setting environment variables:
 
 ### Background Task Settings
 - `SCAN_INTERVAL`: Interval between background scans (default: `1h`)
+- `WORK_WINDOW_START` / `WORK_WINDOW_END`: Hours of the day (0-24, local time — set `TZ`, e.g. `TZ=Europe/Zurich`) between which background scans, thumbnail generation and archive/delete processing run (default: `11` / `20`). A scan still running at the end hour is stopped and interrupted movies are retried in the next window; a scan starts as soon as the window opens. The window may wrap past midnight (e.g. `22`/`6`); equal values (e.g. `0`/`24`) disable it. Manual actions from the web UI are not restricted.
 - `DEBUG`: Enable debug logging (default: `false`)
 - `DISABLE_DELETION`: Disable deletion worker and prevent processing of deletion queue (default: `false`)
 - `IMPORT_EXISTING`: Import existing thumbnails without regenerating (default: `false`)
