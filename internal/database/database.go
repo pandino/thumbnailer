@@ -748,15 +748,15 @@ func (d *DB) GetStats() (*models.Stats, error) {
 	err := d.db.QueryRow(`
 		SELECT
 			COUNT(*) as total,
-			SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
-			SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error,
-			SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-			SUM(CASE WHEN status = 'success' AND viewed = 1 THEN 1 ELSE 0 END) as viewed,
-			SUM(CASE WHEN status = 'success' AND viewed = 0 THEN 1 ELSE 0 END) as unviewed,
-			SUM(CASE WHEN status = 'deleted' THEN 1 ELSE 0 END) as deleted,
-			SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) as archived,
-			SUM(CASE WHEN source = 'generated' THEN 1 ELSE 0 END) as generated,
-			SUM(CASE WHEN source = 'imported' THEN 1 ELSE 0 END) as imported,
+			COALESCE(SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END), 0) as success,
+			COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0) as error,
+			COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending,
+			COALESCE(SUM(CASE WHEN status = 'success' AND viewed = 1 THEN 1 ELSE 0 END), 0) as viewed,
+			COALESCE(SUM(CASE WHEN status = 'success' AND viewed = 0 THEN 1 ELSE 0 END), 0) as unviewed,
+			COALESCE(SUM(CASE WHEN status = 'deleted' THEN 1 ELSE 0 END), 0) as deleted,
+			COALESCE(SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END), 0) as archived,
+			COALESCE(SUM(CASE WHEN source = 'generated' THEN 1 ELSE 0 END), 0) as generated,
+			COALESCE(SUM(CASE WHEN source = 'imported' THEN 1 ELSE 0 END), 0) as imported,
 			COALESCE(SUM(CASE WHEN status = 'success' AND viewed = 1 THEN file_size ELSE 0 END), 0) as viewed_size,
 			COALESCE(SUM(CASE WHEN status = 'success' AND viewed = 0 THEN file_size ELSE 0 END), 0) as unviewed_size
 		FROM thumbnails
