@@ -3,7 +3,7 @@
 
 Pages through the thumbnailer's /api/v1/thumbnails listing, downloads each
 thumbnail (a contact sheet of frames from one movie), asks an
-OpenAI-compatible vision model (LM Studio, Ollama /v1, llama.cpp, ...) for
+OpenAI-compatible vision model (llama.cpp router, LM Studio, Ollama /v1, ...) for
 tags, and writes them back together with a marker tag so the image is not
 analyzed again on the next run.
 
@@ -238,10 +238,13 @@ class Tagger:
 
 def parse_args(argv):
     p = argparse.ArgumentParser(description="Tag movie thumbnails with a local vision model.")
-    p.add_argument("--server", default="http://localhost:8080", help="thumbnailer base URL")
-    p.add_argument("--api-url", default="http://localhost:1234/v1",
-                   help="OpenAI-compatible API base (LM Studio default; Ollama: http://localhost:11434/v1)")
-    p.add_argument("--model", help="model id (default: first model reported by the API)")
+    # No default: the llama.cpp router below also listens on :8080, the thumbnailer's default port
+    p.add_argument("--server", required=True, help="thumbnailer base URL, e.g. http://thumbnailer.example")
+    p.add_argument("--api-url", default="http://localhost:8080/v1",
+                   help="OpenAI-compatible API base (default: llama.cpp router; "
+                        "LM Studio: http://localhost:1234/v1, Ollama: http://localhost:11434/v1)")
+    p.add_argument("--model", default="gemma-4-12b-vision",
+                   help="model id (default: gemma-4-12b-vision; empty string: first model reported by the API)")
     p.add_argument("--keywords", help="comma-separated preferred tags")
     p.add_argument("--keywords-file", help="file with one preferred tag per line (# comments allowed)")
     p.add_argument("--keywords-only", action="store_true", help="only write tags from the keywords")

@@ -201,7 +201,7 @@ Listing for automation (only `success` thumbnails, ordered by id):
 
 ## AI Tagging
 
-`scripts/ai-tagger/ai_tagger.py` tags thumbnails with a local vision model through any OpenAI-compatible API (LM Studio, Ollama, llama.cpp). It prefers your keywords, marks analyzed images with an `ai-reviewed` tag so reruns skip them, and needs only the Python standard library. See `scripts/ai-tagger/README.md`.
+`scripts/ai-tagger/ai_tagger.py` tags thumbnails with a local vision model through any OpenAI-compatible API, by default the llama.cpp router with the `gemma-4-12b-vision` preset (LM Studio and Ollama also work). It prefers your keywords, marks analyzed images with an `ai-reviewed` tag so reruns skip them, and needs only the Python standard library. See `scripts/ai-tagger/README.md`.
 
 For detailed monitoring capabilities, see `METRICS.md` for comprehensive Prometheus metrics documentation.
 

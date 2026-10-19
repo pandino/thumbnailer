@@ -75,10 +75,19 @@ class ParseAnswerTest(unittest.TestCase):
 class ArgsTest(unittest.TestCase):
     def test_keywords_only_requires_keywords(self):
         with self.assertRaises(SystemExit):
-            ai_tagger.parse_args(["--keywords-only"])
+            ai_tagger.parse_args(["--server", "http://x", "--keywords-only"])
+
+    def test_server_is_required(self):
+        with self.assertRaises(SystemExit):
+            ai_tagger.parse_args([])
+
+    def test_router_defaults(self):
+        args = ai_tagger.parse_args(["--server", "http://x"])
+        self.assertEqual(args.api_url, "http://localhost:8080/v1")
+        self.assertEqual(args.model, "gemma-4-12b-vision")
 
     def test_marker_is_normalized(self):
-        self.assertEqual(ai_tagger.parse_args(["--marker", " AI Reviewed "]).marker, "ai reviewed")
+        self.assertEqual(ai_tagger.parse_args(["--server", "http://x", "--marker", " AI Reviewed "]).marker, "ai reviewed")
 
 
 if __name__ == "__main__":
