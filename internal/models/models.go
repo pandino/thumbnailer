@@ -1,7 +1,9 @@
 package models
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -21,6 +23,49 @@ type Thumbnail struct {
 	FileSize      int64     `json:"file_size"`
 	ErrorMessage  string    `json:"error_message,omitempty"`
 	Source        string    `json:"source"`
+	Tags          []string  `json:"tags,omitempty"`
+}
+
+// TagCount reports how many successful thumbnails carry a tag
+type TagCount struct {
+	Tag      string `json:"tag"`
+	Count    int    `json:"count"`
+	Unviewed int    `json:"unviewed"`
+}
+
+// MaxTagLength is the maximum length of a normalized tag
+const MaxTagLength = 64
+
+// NormalizeTag trims, lowercases and collapses whitespace in a tag, rejecting invalid values
+func NormalizeTag(tag string) (string, error) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(tag), " "))
+	if normalized == "" {
+		return "", errors.New("tag must not be empty")
+	}
+	if len(normalized) > MaxTagLength {
+		return "", fmt.Errorf("tag %q exceeds %d characters", normalized, MaxTagLength)
+	}
+	if strings.ContainsAny(normalized, ",/") {
+		return "", fmt.Errorf("tag %q must not contain ',' or '/'", normalized)
+	}
+	return normalized, nil
+}
+
+// NormalizeTags normalizes a list of tags and removes duplicates, preserving order
+func NormalizeTags(tags []string) ([]string, error) {
+	seen := make(map[string]bool, len(tags))
+	result := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		normalized, err := NormalizeTag(tag)
+		if err != nil {
+			return nil, err
+		}
+		if !seen[normalized] {
+			seen[normalized] = true
+			result = append(result, normalized)
+		}
+	}
+	return result, nil
 }
 
 // Stats represents statistics about the thumbnails

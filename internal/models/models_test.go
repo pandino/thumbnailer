@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -119,5 +120,50 @@ func TestValidSource(t *testing.T) {
 		if ValidSource(source) {
 			t.Errorf("Expected %s to be an invalid source", source)
 		}
+	}
+}
+
+func TestNormalizeTag(t *testing.T) {
+	testCases := []struct {
+		input    string
+		expected string
+		wantErr  bool
+	}{
+		{"Foo", "foo", false},
+		{"  Big   Bunny \t", "big bunny", false},
+		{"", "", true},
+		{"   ", "", true},
+		{"a,b", "", true},
+		{"a/b", "", true},
+		{strings.Repeat("x", MaxTagLength), strings.Repeat("x", MaxTagLength), false},
+		{strings.Repeat("x", MaxTagLength+1), "", true},
+	}
+
+	for _, tc := range testCases {
+		got, err := NormalizeTag(tc.input)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("NormalizeTag(%q) expected error, got %q", tc.input, got)
+			}
+			continue
+		}
+		if err != nil || got != tc.expected {
+			t.Errorf("NormalizeTag(%q) = %q, %v; want %q", tc.input, got, err, tc.expected)
+		}
+	}
+}
+
+func TestNormalizeTags(t *testing.T) {
+	got, err := NormalizeTags([]string{"Foo", "bar", "FOO ", "baz"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"foo", "bar", "baz"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("NormalizeTags = %v; want %v", got, want)
+	}
+
+	if _, err := NormalizeTags([]string{"ok", ""}); err == nil {
+		t.Error("expected error for empty tag")
 	}
 }

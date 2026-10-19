@@ -122,6 +122,12 @@ CREATE TABLE thumbnails (
     error_message TEXT NOT NULL DEFAULT '',
     source TEXT DEFAULT 'generated'
 );
+
+CREATE TABLE thumbnail_tags (
+    thumbnail_id INTEGER NOT NULL,
+    tag TEXT NOT NULL,
+    PRIMARY KEY (thumbnail_id, tag)
+);
 ```
 
 Key fields:
@@ -129,6 +135,7 @@ Key fields:
 - `viewed`: Whether the thumbnail has been viewed by the user (0 or 1)
 - `source`: How the thumbnail was created ('generated' or 'imported')
 - `file_size`: Size of the movie file in bytes
+- `thumbnail_tags.tag`: Free-form tag, normalized to lowercase with collapsed whitespace (max 64 chars, no `,` or `/`)
 
 ## Web Interface
 
@@ -141,6 +148,7 @@ The application provides two main pages:
 - **Thumbnail Lists**: Browse thumbnails by status (unviewed, viewed, deleted, archived, errors)
 - **Real-time Updates**: Dynamic loading of thumbnail data via JavaScript
 - **Slideshow Launcher**: Start new slideshow sessions from unviewed thumbnails
+- **Tags**: All tags in one paragraph, most frequent first; click a tag to start a slideshow of its unviewed thumbnails (`/slideshow?new=true&tag=<tag>`)
 
 ### Slideshow Page (/slideshow)
 - Displays thumbnails in a fullscreen slideshow view
@@ -175,6 +183,17 @@ The application provides several API endpoints for programmatic access:
 - `POST /api/v1/video/archive` - Archive a video by filename
 - `POST /api/v1/video/delete` - Delete a video by filename
 - `GET /api/v1/video/status/{filename}` - Get video status by filename
+
+Tag endpoints (tag responses are `{"success", "thumbnail_id", "filename", "tags": [...]}`):
+
+- `GET /api/tags` - All tags on successful thumbnails with `count` and `unviewed`, most frequent first
+- `GET /api/thumbnails/{id}/tags` - Get a thumbnail's tags
+- `PUT /api/thumbnails/{id}/tags` - Replace all tags: `{"tags": ["a", "b"]}`
+- `POST /api/thumbnails/{id}/tags` - Add tags: `{"tags": ["c"]}`
+- `DELETE /api/thumbnails/{id}/tags/{tag}` - Remove one tag
+- `GET /api/v1/video/tags/{filename}` - Get a video's tags by filename
+- `PUT /api/v1/video/tags` - Replace all tags by filename: `{"filename": "x.mp4", "tags": ["a"]}`
+- `POST /api/v1/video/tags` - Add/remove tags by filename: `{"filename": "x.mp4", "add": ["a"], "remove": ["b"]}`
 
 For detailed monitoring capabilities, see `METRICS.md` for comprehensive Prometheus metrics documentation.
 

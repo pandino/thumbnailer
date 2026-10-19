@@ -73,6 +73,17 @@ func initSchema(db *sql.DB) error {
 		-- Index for faster queries by source
 		CREATE INDEX IF NOT EXISTS idx_thumbnails_source ON thumbnails(source);
 		
+		-- Tags attached to thumbnails (no FK: UpsertThumbnail uses INSERT OR REPLACE,
+		-- which would cascade-delete tags even though the row keeps its id)
+		CREATE TABLE IF NOT EXISTS thumbnail_tags (
+			thumbnail_id INTEGER NOT NULL,
+			tag TEXT NOT NULL,
+			PRIMARY KEY (thumbnail_id, tag)
+		);
+
+		-- Index for faster queries by tag
+		CREATE INDEX IF NOT EXISTS idx_thumbnail_tags_tag ON thumbnail_tags(tag);
+		
 		-- Trigger to update 'updated_at' on update
 		CREATE TRIGGER IF NOT EXISTS thumbnails_updated_at 
 		AFTER UPDATE ON thumbnails
@@ -305,19 +316,69 @@ func (d *DB) GetByThumbnailPath(thumbnailPath string) (*models.Thumbnail, error)
 
 // GetRandomUnviewedThumbnail gets a random unviewed thumbnail
 func (d *DB) GetRandomUnviewedThumbnail() (*models.Thumbnail, error) {
-	// First, count the total number of unviewed thumbnails
+	return d.randomUnviewed("", nil)
+}
+
+// GetRandomUnviewedThumbnailExcluding gets a random unviewed thumbnail excluding specific IDs
+func (d *DB) GetRandomUnviewedThumbnailExcluding(excludeIDs ...int64) (*models.Thumbnail, error) {
+	return d.randomUnviewed("", excludeIDs)
+}
+
+// GetRandomUnviewedThumbnailWithTag gets a random unviewed thumbnail carrying the given tag,
+// excluding specific IDs. An empty tag disables the tag filter.
+func (d *DB) GetRandomUnviewedThumbnailWithTag(tag string, excludeIDs ...int64) (*models.Thumbnail, error) {
+	return d.randomUnviewed(tag, excludeIDs)
+}
+
+// GetUnviewedCountByTag returns the number of unviewed thumbnails carrying the given tag
+func (d *DB) GetUnviewedCountByTag(tag string) (int, error) {
 	var count int
 	err := d.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM thumbnails
+		WHERE status = 'success' AND viewed = 0
+		AND id IN (SELECT thumbnail_id FROM thumbnail_tags WHERE tag = ?)`,
+		tag,
+	).Scan(&count)
+	return count, err
+}
+
+// randomUnviewed picks a random unviewed thumbnail, optionally filtered by tag and excluding IDs
+func (d *DB) randomUnviewed(tag string, excludeIDs []int64) (*models.Thumbnail, error) {
+	// Build the filter condition
+	condition := ""
+	args := []interface{}{}
+
+	if tag != "" {
+		condition += " AND id IN (SELECT thumbnail_id FROM thumbnail_tags WHERE tag = ?)"
+		args = append(args, tag)
+	}
+
+	if len(excludeIDs) > 0 {
+		condition += " AND id NOT IN ("
+		for i, id := range excludeIDs {
+			if i > 0 {
+				condition += ", "
+			}
+			condition += "?"
+			args = append(args, id)
+		}
+		condition += ")"
+	}
+
+	// First, count the total number of matching unviewed thumbnails
+	var count int
+	countQuery := `
 		SELECT COUNT(*) 
 		FROM thumbnails 
-		WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND status != 'archived'
-	`).Scan(&count)
+		WHERE status = 'success' AND viewed = 0` + condition
 
+	err := d.db.QueryRow(countQuery, args...).Scan(&count)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count unviewed thumbnails: %w", err)
 	}
 
-	// If no unviewed thumbnails, return nil
+	// If no unviewed thumbnails available, return nil
 	if count == 0 {
 		return nil, nil
 	}
@@ -333,82 +394,16 @@ func (d *DB) GetRandomUnviewedThumbnail() (*models.Thumbnail, error) {
 
 	// Get a random thumbnail using LIMIT and OFFSET
 	thumbnail := &models.Thumbnail{}
-	err = d.db.QueryRow(`
-		SELECT 
-			id, movie_path, movie_filename, thumbnail_path, 
-			created_at, updated_at, status, viewed,
-			width, height, duration, file_size, error_message, source
-		FROM thumbnails 
-		WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND status != 'archived'
-		LIMIT 1 OFFSET ?
-	`, randomNum.Int64()).Scan(
-		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
-		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
-		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.FileSize, &thumbnail.ErrorMessage, &thumbnail.Source,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-
-	return thumbnail, err
-}
-
-// GetRandomUnviewedThumbnailExcluding gets a random unviewed thumbnail excluding specific IDs
-func (d *DB) GetRandomUnviewedThumbnailExcluding(excludeIDs ...int64) (*models.Thumbnail, error) {
-	// Build the exclude condition
-	excludeCondition := ""
-	excludeArgs := []interface{}{}
-
-	if len(excludeIDs) > 0 {
-		excludeCondition = " AND id NOT IN ("
-		for i, id := range excludeIDs {
-			if i > 0 {
-				excludeCondition += ", "
-			}
-			excludeCondition += "?"
-			excludeArgs = append(excludeArgs, id)
-		}
-		excludeCondition += ")"
-	}
-
-	// First, count the total number of unviewed thumbnails excluding the specified IDs
-	var count int
-	countQuery := `
-		SELECT COUNT(*) 
-		FROM thumbnails 
-		WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND status != 'archived'` + excludeCondition
-
-	err := d.db.QueryRow(countQuery, excludeArgs...).Scan(&count)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count unviewed thumbnails: %w", err)
-	}
-
-	// If no unviewed thumbnails available, return nil
-	if count == 0 {
-		return nil, nil
-	}
-
-	// Generate a random offset
-	randomNum, err := rand.Int(rand.Reader, big.NewInt(int64(count)))
-	if err != nil {
-		// Fall back to math/rand if crypto/rand fails
-		offset := mathrand.Intn(count)
-		randomNum = big.NewInt(int64(offset))
-	}
-
-	// Get a random thumbnail using LIMIT and OFFSET
-	thumbnail := &models.Thumbnail{}
 	selectQuery := `
 		SELECT 
 			id, movie_path, movie_filename, thumbnail_path, 
 			created_at, updated_at, status, viewed,
 			width, height, duration, file_size, error_message, source
 		FROM thumbnails 
-		WHERE status = 'success' AND viewed = 0 AND status != 'deleted' AND status != 'archived'` + excludeCondition + `
+		WHERE status = 'success' AND viewed = 0` + condition + `
 		LIMIT 1 OFFSET ?`
 
-	selectArgs := append(excludeArgs, randomNum.Int64())
+	selectArgs := append(args, randomNum.Int64())
 	err = d.db.QueryRow(selectQuery, selectArgs...).Scan(
 		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
 		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
@@ -698,14 +693,31 @@ func (d *DB) ResetViewedStatus() (int64, error) {
 	return result.RowsAffected()
 }
 
-// DeleteThumbnail deletes a thumbnail record
+// DeleteThumbnail deletes a thumbnail record and its tags
 func (d *DB) DeleteThumbnail(moviePath string) error {
-	_, err := d.db.Exec(`
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		DELETE FROM thumbnail_tags
+		WHERE thumbnail_id IN (SELECT id FROM thumbnails WHERE movie_path = ?)`,
+		moviePath,
+	); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
 		DELETE FROM thumbnails 
 		WHERE movie_path = ?`,
 		moviePath,
-	)
-	return err
+	); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // RestoreFromDeletion restores a thumbnail from deletion status back to success
@@ -787,20 +799,144 @@ func scanThumbnails(rows *sql.Rows) ([]*models.Thumbnail, error) {
 	return thumbnails, nil
 }
 
-// CleanupOrphans removes database entries for missing movies
+// CleanupOrphans removes database entries for missing movies, along with their tags and any orphaned tags
 func (d *DB) CleanupOrphans() (int64, error) {
-	result, err := d.db.Exec(`
+	tx, err := d.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		DELETE FROM thumbnail_tags
+		WHERE thumbnail_id IN (SELECT id FROM thumbnails WHERE status = 'deleted')
+		OR thumbnail_id NOT IN (SELECT id FROM thumbnails)
+	`); err != nil {
+		return 0, err
+	}
+
+	result, err := tx.Exec(`
 		DELETE FROM thumbnails
 		WHERE status = 'deleted'
 	`)
 	if err != nil {
 		return 0, err
 	}
-	return result.RowsAffected()
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return affected, tx.Commit()
 }
 
 // Vacuum optimizes the database
 func (d *DB) Vacuum() error {
 	_, err := d.db.Exec("VACUUM")
 	return err
+}
+
+// GetTags returns the sorted tags of a thumbnail
+func (d *DB) GetTags(thumbnailID int64) ([]string, error) {
+	rows, err := d.db.Query(`
+		SELECT tag
+		FROM thumbnail_tags
+		WHERE thumbnail_id = ?
+		ORDER BY tag ASC`,
+		thumbnailID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tags := []string{}
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, err
+		}
+		tags = append(tags, tag)
+	}
+	return tags, rows.Err()
+}
+
+// SetTags replaces all tags of a thumbnail. Tags are expected to be normalized.
+func (d *DB) SetTags(thumbnailID int64, tags []string) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("DELETE FROM thumbnail_tags WHERE thumbnail_id = ?", thumbnailID); err != nil {
+		return err
+	}
+	for _, tag := range tags {
+		if _, err := tx.Exec("INSERT OR IGNORE INTO thumbnail_tags (thumbnail_id, tag) VALUES (?, ?)", thumbnailID, tag); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// AddTags adds tags to a thumbnail, ignoring ones it already has. Tags are expected to be normalized.
+func (d *DB) AddTags(thumbnailID int64, tags []string) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, tag := range tags {
+		if _, err := tx.Exec("INSERT OR IGNORE INTO thumbnail_tags (thumbnail_id, tag) VALUES (?, ?)", thumbnailID, tag); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// RemoveTags removes tags from a thumbnail. Tags are expected to be normalized.
+func (d *DB) RemoveTags(thumbnailID int64, tags []string) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, tag := range tags {
+		if _, err := tx.Exec("DELETE FROM thumbnail_tags WHERE thumbnail_id = ? AND tag = ?", thumbnailID, tag); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// GetTagCounts returns all tags on successful thumbnails, most frequent first
+func (d *DB) GetTagCounts() ([]models.TagCount, error) {
+	rows, err := d.db.Query(`
+		SELECT
+			tt.tag,
+			COUNT(*) as count,
+			SUM(CASE WHEN t.viewed = 0 THEN 1 ELSE 0 END) as unviewed
+		FROM thumbnail_tags tt
+		JOIN thumbnails t ON t.id = tt.thumbnail_id
+		WHERE t.status = 'success'
+		GROUP BY tt.tag
+		ORDER BY count DESC, tt.tag ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var counts []models.TagCount
+	for rows.Next() {
+		var tc models.TagCount
+		if err := rows.Scan(&tc.Tag, &tc.Count, &tc.Unviewed); err != nil {
+			return nil, err
+		}
+		counts = append(counts, tc)
+	}
+	return counts, rows.Err()
 }

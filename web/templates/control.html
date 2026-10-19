@@ -67,6 +67,16 @@
                 </div>
             </section>
 
+            {{if .Tags}}
+            <section class="tags-panel">
+                <h2>Tags</h2>
+                <p class="tag-cloud">
+                    {{range .Tags}}{{if gt .Unviewed 0}}<a class="tag-link" href="/slideshow?new=true&tag={{.Tag}}" title="{{.Unviewed}} of {{.Count}} unviewed — start slideshow">{{.Tag}}<span class="tag-count">{{.Count}}</span></a>{{else}}<span class="tag-link tag-empty" title="All viewed">{{.Tag}}<span class="tag-count">{{.Count}}</span></span>{{end}}
+                    {{end}}
+                </p>
+            </section>
+            {{end}}
+
             <section class="actions-panel">
                 <h2>Actions</h2>
                 <div class="actions-grid">
@@ -133,7 +143,7 @@
                 <div class="slideshow-actions">
                     <a href="/slideshow?new=true" class="start-slideshow">Start New Slideshow</a>
                     {{if .HasSession}}
-                    <a href="/slideshow" class="continue-slideshow">Continue Slideshow ({{.SessionViewedCount}}/{{.SessionTotalCount}})</a>
+                    <a href="/slideshow" class="continue-slideshow">Continue Slideshow{{if .SessionTag}} — tag {{.SessionTag}}{{end}} ({{.SessionViewedCount}}/{{.SessionTotalCount}})</a>
                     {{if gt .SessionDeletedSize 0}}
                     <span class="session-deleted-info">Deleted in this session: {{.SessionDeletedSizeFormatted}}</span>
                     {{end}}

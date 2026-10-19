@@ -13,7 +13,7 @@
             <div class="slideshow-info">
                 <span class="movie-title">{{.Thumbnail.MovieFilename}}</span>
                 <span class="slideshow-counter">
-                    Slide {{.Current}}/{{.Total}}{{if gt .SessionDeletedSize 0}} · Deleted {{.SessionDeletedSizeFormatted}}{{end}}
+                    Slide {{.Current}}/{{.Total}}{{if .Tag}} · Tag: {{.Tag}}{{end}}{{if gt .SessionDeletedSize 0}} · Deleted {{.SessionDeletedSizeFormatted}}{{end}}
                 </span>
                 {{if .PendingDelete}}
                 <span class="deletion-status">Marked for deletion — press U to undo</span>
@@ -55,6 +55,12 @@
                 <span class="detail-label">Source:</span>
                 <span class="detail-value source-badge {{.Thumbnail.Source}}">{{.Thumbnail.Source}}</span>
             </div>
+            {{if .Thumbnail.Tags}}
+            <div class="detail-item">
+                <span class="detail-label">Tags:</span>
+                <span class="detail-value">{{range $i, $t := .Thumbnail.Tags}}{{if $i}}, {{end}}{{$t}}{{end}}</span>
+            </div>
+            {{end}}
         </div>
 
         <div class="slideshow-nav">

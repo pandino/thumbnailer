@@ -1064,3 +1064,40 @@ footer .version-info {
         display: none;
     }
 }
+
+/* Tag cloud */
+.tag-cloud {
+    line-height: 2.2;
+}
+
+.tag-link {
+    display: inline-block;
+    margin: 0 4px 0 0;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background-color: rgba(52, 152, 219, 0.1);
+    border: 1px solid rgba(52, 152, 219, 0.4);
+    color: var(--secondary-color);
+    text-decoration: none;
+    line-height: 1.6;
+    white-space: nowrap;
+    transition: background-color 0.2s ease;
+}
+
+a.tag-link:hover {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.tag-count {
+    margin-left: 6px;
+    font-size: 0.8em;
+    opacity: 0.7;
+}
+
+.tag-link.tag-empty {
+    background-color: transparent;
+    border-color: #ccc;
+    color: #999;
+    cursor: default;
+}
