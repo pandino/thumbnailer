@@ -214,3 +214,47 @@ func TestTagSlideshowSession(t *testing.T) {
 		t.Errorf("invalid tag status = %d; want 400", rr.Code)
 	}
 }
+
+func TestHandleAPIListThumbnails(t *testing.T) {
+	s, db := newTagTestServer(t)
+	a := addTagTestThumbnail(t, db, "a.mp4", 0)
+	b := addTagTestThumbnail(t, db, "with space.mp4", 0)
+	addTagTestThumbnail(t, db, "c.mp4", 1)
+	db.SetTags(a.ID, []string{"ai-reviewed", "cats"})
+
+	get := func(query string) (*httptest.ResponseRecorder, ThumbnailListResponse) {
+		rr := httptest.NewRecorder()
+		s.handleAPIListThumbnails(rr, httptest.NewRequest("GET", "/api/v1/thumbnails?"+query, nil))
+		var resp ThumbnailListResponse
+		if rr.Code == http.StatusOK {
+			if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+				t.Fatalf("failed to decode: %v", err)
+			}
+		}
+		return rr, resp
+	}
+
+	// First page is full, so a cursor is returned
+	rr, resp := get("limit=1")
+	if rr.Code != http.StatusOK || len(resp.Items) != 1 || resp.NextAfterID != a.ID {
+		t.Fatalf("page 1 = %d %+v", rr.Code, resp)
+	}
+	if item := resp.Items[0]; item.ThumbnailURL != "/thumbnails/a.mp4.jpg" || item.Viewed || strings.Join(item.Tags, ",") != "ai-reviewed,cats" {
+		t.Errorf("item = %+v", item)
+	}
+
+	// Marker filter skips the reviewed one; partial page ends paging
+	rr, resp = get("viewed=0&without_tag=AI-Reviewed")
+	if rr.Code != http.StatusOK || len(resp.Items) != 1 || resp.Items[0].ID != b.ID || resp.NextAfterID != 0 {
+		t.Fatalf("without_tag = %d %+v", rr.Code, resp)
+	}
+	if resp.Items[0].ThumbnailURL != "/thumbnails/with%20space.mp4.jpg" || resp.Items[0].Tags == nil {
+		t.Errorf("item = %+v", resp.Items[0])
+	}
+
+	for _, bad := range []string{"viewed=2", "untagged=maybe", "after_id=-1", "after_id=x", "limit=0", "limit=201", "tag=a%2Fb", "without_tag=%20"} {
+		if rr, _ := get(bad); rr.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d; want 400", bad, rr.Code)
+		}
+	}
+}

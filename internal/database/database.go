@@ -912,6 +912,91 @@ func (d *DB) RemoveTags(thumbnailID int64, tags []string) error {
 	return tx.Commit()
 }
 
+// ListThumbnails returns successful thumbnails matching the filter, ordered by ID for cursor paging
+func (d *DB) ListThumbnails(f models.ThumbnailFilter) ([]*models.Thumbnail, error) {
+	condition := ""
+	args := []interface{}{}
+
+	if f.Viewed != nil {
+		condition += " AND viewed = ?"
+		if *f.Viewed {
+			args = append(args, 1)
+		} else {
+			args = append(args, 0)
+		}
+	}
+	if f.Untagged {
+		condition += " AND NOT EXISTS (SELECT 1 FROM thumbnail_tags WHERE thumbnail_id = thumbnails.id)"
+	}
+	if f.Tag != "" {
+		condition += " AND id IN (SELECT thumbnail_id FROM thumbnail_tags WHERE tag = ?)"
+		args = append(args, f.Tag)
+	}
+	if f.WithoutTag != "" {
+		condition += " AND id NOT IN (SELECT thumbnail_id FROM thumbnail_tags WHERE tag = ?)"
+		args = append(args, f.WithoutTag)
+	}
+	args = append(args, f.AfterID, f.Limit)
+
+	rows, err := d.db.Query(`
+		SELECT 
+			id, movie_path, movie_filename, thumbnail_path, 
+			created_at, updated_at, status, viewed,
+			width, height, duration, file_size, error_message, source
+		FROM thumbnails
+		WHERE status = 'success'`+condition+` AND id > ?
+		ORDER BY id ASC
+		LIMIT ?`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanThumbnails(rows)
+}
+
+// GetTagsForIDs returns the sorted tags of several thumbnails in a single query
+func (d *DB) GetTagsForIDs(ids []int64) (map[int64][]string, error) {
+	result := make(map[int64][]string, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	placeholders := ""
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		if i > 0 {
+			placeholders += ", "
+		}
+		placeholders += "?"
+		args[i] = id
+	}
+
+	rows, err := d.db.Query(`
+		SELECT thumbnail_id, tag
+		FROM thumbnail_tags
+		WHERE thumbnail_id IN (`+placeholders+`)
+		ORDER BY thumbnail_id, tag ASC`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		var tag string
+		if err := rows.Scan(&id, &tag); err != nil {
+			return nil, err
+		}
+		result[id] = append(result[id], tag)
+	}
+	return result, rows.Err()
+}
+
 // GetTagCounts returns all tags on successful thumbnails, most frequent first
 func (d *DB) GetTagCounts() ([]models.TagCount, error) {
 	rows, err := d.db.Query(`

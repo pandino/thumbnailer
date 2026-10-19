@@ -33,6 +33,16 @@ type TagCount struct {
 	Unviewed int    `json:"unviewed"`
 }
 
+// ThumbnailFilter selects successful thumbnails for cursor-paged listing
+type ThumbnailFilter struct {
+	Viewed     *bool  // nil means viewed and unviewed
+	Untagged   bool   // only thumbnails without any tag
+	Tag        string // only thumbnails with this tag
+	WithoutTag string // only thumbnails lacking this tag
+	AfterID    int64  // cursor: only IDs greater than this
+	Limit      int
+}
+
 // MaxTagLength is the maximum length of a normalized tag
 const MaxTagLength = 64
 

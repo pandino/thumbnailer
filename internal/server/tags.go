@@ -2,7 +2,9 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/gorilla/mux"
@@ -241,4 +243,130 @@ func (s *Server) handleAPIUpdateVideoTags(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.applyTagOp(w, thumbnail, tagOp{add: req.Add, remove: req.Remove}, req.Filename)
+}
+
+const (
+	defaultListLimit = 50
+	maxListLimit     = 200
+)
+
+// ThumbnailListItem is a thumbnail entry of the paged listing
+type ThumbnailListItem struct {
+	ID            int64    `json:"id"`
+	MovieFilename string   `json:"movie_filename"`
+	ThumbnailURL  string   `json:"thumbnail_url"`
+	Viewed        bool     `json:"viewed"`
+	Tags          []string `json:"tags"`
+}
+
+// ThumbnailListResponse is a page of thumbnails; NextAfterID is 0 when there are no more pages
+type ThumbnailListResponse struct {
+	Items       []ThumbnailListItem `json:"items"`
+	NextAfterID int64               `json:"next_after_id"`
+}
+
+// parseThumbnailFilter reads listing filters from the query string
+func parseThumbnailFilter(r *http.Request) (models.ThumbnailFilter, error) {
+	q := r.URL.Query()
+	f := models.ThumbnailFilter{Limit: defaultListLimit}
+
+	switch q.Get("viewed") {
+	case "":
+	case "0", "false":
+		viewed := false
+		f.Viewed = &viewed
+	case "1", "true":
+		viewed := true
+		f.Viewed = &viewed
+	default:
+		return f, fmt.Errorf("viewed must be 0 or 1")
+	}
+
+	switch q.Get("untagged") {
+	case "", "0", "false":
+	case "1", "true":
+		f.Untagged = true
+	default:
+		return f, fmt.Errorf("untagged must be true or false")
+	}
+
+	for param, dst := range map[string]*string{"tag": &f.Tag, "without_tag": &f.WithoutTag} {
+		if raw := q.Get(param); raw != "" {
+			tag, err := models.NormalizeTag(raw)
+			if err != nil {
+				return f, fmt.Errorf("%s: %w", param, err)
+			}
+			*dst = tag
+		}
+	}
+
+	if raw := q.Get("after_id"); raw != "" {
+		afterID, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || afterID < 0 {
+			return f, fmt.Errorf("after_id must be a non-negative integer")
+		}
+		f.AfterID = afterID
+	}
+
+	if raw := q.Get("limit"); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > maxListLimit {
+			return f, fmt.Errorf("limit must be between 1 and %d", maxListLimit)
+		}
+		f.Limit = limit
+	}
+
+	return f, nil
+}
+
+// handleAPIListThumbnails returns a cursor-paged list of successful thumbnails with their tags
+func (s *Server) handleAPIListThumbnails(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	filter, err := parseThumbnailFilter(r)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	thumbnails, err := s.db.ListThumbnails(filter)
+	if err != nil {
+		s.log.WithError(err).Error("Failed to list thumbnails")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Internal server error"})
+		return
+	}
+
+	ids := make([]int64, len(thumbnails))
+	for i, thumbnail := range thumbnails {
+		ids[i] = thumbnail.ID
+	}
+	tagsByID, err := s.db.GetTagsForIDs(ids)
+	if err != nil {
+		s.log.WithError(err).Error("Failed to get tags for thumbnail list")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Internal server error"})
+		return
+	}
+
+	resp := ThumbnailListResponse{Items: make([]ThumbnailListItem, 0, len(thumbnails))}
+	for _, thumbnail := range thumbnails {
+		tags := tagsByID[thumbnail.ID]
+		if tags == nil {
+			tags = []string{}
+		}
+		resp.Items = append(resp.Items, ThumbnailListItem{
+			ID:            thumbnail.ID,
+			MovieFilename: thumbnail.MovieFilename,
+			ThumbnailURL:  (&url.URL{Path: "/thumbnails/" + thumbnail.ThumbnailPath}).EscapedPath(),
+			Viewed:        thumbnail.IsViewed(),
+			Tags:          tags,
+		})
+	}
+	if len(thumbnails) == filter.Limit {
+		resp.NextAfterID = thumbnails[len(thumbnails)-1].ID
+	}
+
+	json.NewEncoder(w).Encode(resp)
 }

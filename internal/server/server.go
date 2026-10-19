@@ -126,6 +126,7 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/api/v1/video/tags/{filename}", s.handleAPIGetVideoTags).Methods("GET")
 	s.router.HandleFunc("/api/v1/video/tags", s.handleAPISetVideoTags).Methods("PUT")
 	s.router.HandleFunc("/api/v1/video/tags", s.handleAPIUpdateVideoTags).Methods("POST")
+	s.router.HandleFunc("/api/v1/thumbnails", s.handleAPIListThumbnails).Methods("GET")
 
 	// Metrics endpoint
 	s.router.Handle("/metrics", promhttp.Handler()).Methods("GET")

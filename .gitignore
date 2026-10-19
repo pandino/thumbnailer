@@ -7,3 +7,4 @@ cookies.txt
 ISSUES.md
 runlocal.sh
 test_*.sh
+__pycache__/

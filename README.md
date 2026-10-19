@@ -195,6 +195,14 @@ Tag endpoints (tag responses are `{"success", "thumbnail_id", "filename", "tags"
 - `PUT /api/v1/video/tags` - Replace all tags by filename: `{"filename": "x.mp4", "tags": ["a"]}`
 - `POST /api/v1/video/tags` - Add/remove tags by filename: `{"filename": "x.mp4", "add": ["a"], "remove": ["b"]}`
 
+Listing for automation (only `success` thumbnails, ordered by id):
+
+- `GET /api/v1/thumbnails` - Cursor-paged list with tags. Filters: `viewed=0|1`, `untagged=true`, `tag=<tag>`, `without_tag=<tag>`, `after_id=<id>`, `limit=1..200` (default 50). Returns `{"items": [{"id", "movie_filename", "thumbnail_url", "viewed", "tags"}], "next_after_id"}`; pass `next_after_id` as `after_id` for the next page, `0` means done.
+
+## AI Tagging
+
+`scripts/ai-tagger/ai_tagger.py` tags thumbnails with a local vision model through any OpenAI-compatible API (LM Studio, Ollama, llama.cpp). It prefers your keywords, marks analyzed images with an `ai-reviewed` tag so reruns skip them, and needs only the Python standard library. See `scripts/ai-tagger/README.md`.
+
 For detailed monitoring capabilities, see `METRICS.md` for comprehensive Prometheus metrics documentation.
 
 ## MPV Player Integration

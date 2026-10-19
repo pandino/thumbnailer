@@ -2,6 +2,7 @@ package database
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pandino/movie-thumbnailer-go/internal/models"
@@ -175,5 +176,82 @@ func TestRandomUnviewedWithTag(t *testing.T) {
 	th, err = db.GetRandomUnviewedThumbnailWithTag("", tagged.ID)
 	if err != nil || th == nil || th.MovieFilename != "untagged.mp4" {
 		t.Fatalf("expected untagged thumbnail with empty tag filter, got %+v, %v", th, err)
+	}
+}
+
+func listIDs(t *testing.T, db *DB, f models.ThumbnailFilter) []int64 {
+	t.Helper()
+	if f.Limit == 0 {
+		f.Limit = 100
+	}
+	thumbnails, err := db.ListThumbnails(f)
+	if err != nil {
+		t.Fatalf("ListThumbnails(%+v) failed: %v", f, err)
+	}
+	ids := []int64{}
+	for _, th := range thumbnails {
+		ids = append(ids, th.ID)
+	}
+	return ids
+}
+
+func assertIDs(t *testing.T, name string, got []int64, want ...int64) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s: got %v; want %v", name, got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("%s: got %v; want %v", name, got, want)
+		}
+	}
+}
+
+func TestListThumbnailsFilters(t *testing.T) {
+	db := newTestDB(t)
+	a := addTestThumbnail(t, db, "a.mp4", models.StatusSuccess, 0) // tags: cats, ai-reviewed
+	b := addTestThumbnail(t, db, "b.mp4", models.StatusSuccess, 1) // tags: cats
+	c := addTestThumbnail(t, db, "c.mp4", models.StatusSuccess, 0) // untagged
+	d := addTestThumbnail(t, db, "d.mp4", models.StatusSuccess, 1) // untagged
+	e := addTestThumbnail(t, db, "e.mp4", models.StatusError, 0)   // never listed
+	db.SetTags(a.ID, []string{"cats", "ai-reviewed"})
+	db.SetTags(b.ID, []string{"cats"})
+	db.SetTags(e.ID, []string{"cats"})
+
+	unviewed, viewed := false, true
+	assertIDs(t, "all", listIDs(t, db, models.ThumbnailFilter{}), a.ID, b.ID, c.ID, d.ID)
+	assertIDs(t, "unviewed", listIDs(t, db, models.ThumbnailFilter{Viewed: &unviewed}), a.ID, c.ID)
+	assertIDs(t, "viewed", listIDs(t, db, models.ThumbnailFilter{Viewed: &viewed}), b.ID, d.ID)
+	assertIDs(t, "untagged", listIDs(t, db, models.ThumbnailFilter{Untagged: true}), c.ID, d.ID)
+	assertIDs(t, "tag", listIDs(t, db, models.ThumbnailFilter{Tag: "cats"}), a.ID, b.ID)
+	assertIDs(t, "without_tag", listIDs(t, db, models.ThumbnailFilter{WithoutTag: "ai-reviewed"}), b.ID, c.ID, d.ID)
+	assertIDs(t, "unviewed+without_tag", listIDs(t, db, models.ThumbnailFilter{Viewed: &unviewed, WithoutTag: "ai-reviewed"}), c.ID)
+	assertIDs(t, "unviewed+untagged", listIDs(t, db, models.ThumbnailFilter{Viewed: &unviewed, Untagged: true}), c.ID)
+
+	// Cursor paging
+	assertIDs(t, "page 1", listIDs(t, db, models.ThumbnailFilter{Limit: 2}), a.ID, b.ID)
+	assertIDs(t, "page 2", listIDs(t, db, models.ThumbnailFilter{Limit: 2, AfterID: b.ID}), c.ID, d.ID)
+	assertIDs(t, "page 3", listIDs(t, db, models.ThumbnailFilter{Limit: 2, AfterID: d.ID}))
+}
+
+func TestGetTagsForIDs(t *testing.T) {
+	db := newTestDB(t)
+	a := addTestThumbnail(t, db, "a.mp4", models.StatusSuccess, 0)
+	b := addTestThumbnail(t, db, "b.mp4", models.StatusSuccess, 0)
+	c := addTestThumbnail(t, db, "c.mp4", models.StatusSuccess, 0)
+	db.SetTags(a.ID, []string{"z", "y"})
+	db.SetTags(b.ID, []string{"x"})
+
+	got, err := db.GetTagsForIDs([]int64{a.ID, b.ID, c.ID})
+	if err != nil {
+		t.Fatalf("GetTagsForIDs failed: %v", err)
+	}
+	if strings.Join(got[a.ID], ",") != "y,z" || strings.Join(got[b.ID], ",") != "x" || len(got[c.ID]) != 0 {
+		t.Errorf("GetTagsForIDs = %v", got)
+	}
+
+	empty, err := db.GetTagsForIDs(nil)
+	if err != nil || len(empty) != 0 {
+		t.Errorf("GetTagsForIDs(nil) = %v, %v", empty, err)
 	}
 }

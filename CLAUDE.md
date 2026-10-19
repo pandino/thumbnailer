@@ -44,6 +44,8 @@ Session state is **stateless on the server** — it lives entirely in a base64-e
 ### `/api/v1/video/*` and MPV
 `POST /api/v1/video/archive` and `/delete` take a movie filename and enqueue the status change; `GET /api/v1/video/status/{filename}` reports current state. These exist so the MPV Lua scripts in `scripts/mpv/` can archive/delete the currently playing file and skip to the next. The scripts support a native-HTTP mode (no curl dependency) with auto-detection — see `scripts/mpv/README.md`.
 
+`GET /api/v1/thumbnails` is a cursor-paged (`after_id`, ordered by id) listing with tag filters, used by the AI tagger in `scripts/ai-tagger/` (stdlib-only Python; tests: `python3 -m unittest discover -s scripts/ai-tagger`), which marks analyzed thumbnails with an `ai-reviewed` tag and fetches `without_tag=ai-reviewed`.
+
 ## Conventions
 - Logging is `logrus` with structured fields (`WithField`/`WithFields`); follow the existing field naming (`movie`, `thumbnail`, `archive`).
 - Long-running loops in scanner/worker check `ctx.Done()` periodically (every N iterations) for cooperative cancellation — preserve this when adding loops.
