@@ -19,12 +19,7 @@ llama-daemon status          # router up, which model is loaded
 llama-daemon start           # if it isn't running
 ```
 
-> **Run one model server at a time.** The router and LM Studio share the 12 GB GPU. Loading Gemma in LM Studio while the router holds it pushes VRAM past the limit, and everything slows to a crawl: a measured ~146 s per image instead of ~3.7 s. LM Studio also runs Gemma with thinking on, which costs minutes per image on its own.
-
-Any other OpenAI-compatible `/v1/chat/completions` endpoint that accepts images works too:
-
-- **LM Studio**: `--api-url http://localhost:1234/v1 --model <id>`. Stop the router first, and turn thinking off for the model. Always pass `--model`, because `/v1/models` lists every downloaded model, not just the loaded one.
-- **Ollama**: `--api-url http://localhost:11434/v1 --model qwen2.5vl`.
+Any other OpenAI-compatible `/v1/chat/completions` endpoint that accepts images works too. Pass `--api-url` and `--model`, for example Ollama: `--api-url http://localhost:11434/v1 --model qwen2.5vl`. Use a vision model with thinking/reasoning turned off: a thinking model spends minutes per image before it answers.
 
 `--model ""` picks the first model reported by `/v1/models`.
 
