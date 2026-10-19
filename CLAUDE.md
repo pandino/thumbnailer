@@ -12,8 +12,10 @@ task gobuild           # Build the Go binary to build/movie-thumbnailer with ver
 go test ./...          # Run all tests (or `task test` to run them in a golang:1.24-alpine container)
 go test ./internal/server -run TestName   # Run a single test
 task build             # Build the container image (podman) with embedded version/commit/build-date
-task publish           # Push to Docker Hub — only pushes :version+:latest on a clean tagged commit, else :debug
+task publish           # Push to Docker Hub — clean tagged commit: :version+:latest; untagged on main: :latest only; other branches: :debug
 ```
+
+Versions come from git tags (`git describe --tags --always --dirty`, e.g. `v0.6.0-2-gabc1234`); there is no VERSION file. New features bump the minor version (`vX.Y.0`), fixes the patch. Note `task publish`'s dirty check is `git diff --quiet`, so staged or untracked changes don't block a versioned push.
 
 There is no separate lint step; rely on `go vet ./...` and `gofmt`.
 
