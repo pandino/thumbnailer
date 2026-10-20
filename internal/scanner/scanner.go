@@ -774,6 +774,7 @@ func (s *Scanner) keepDecidedGrid(thumbnail *models.Thumbnail) {
 			} else {
 				gridFile = name
 				s.log.WithFields(logrus.Fields{"thumbnail": src, "decided": dst}).Debug("Kept decided grid")
+				s.recordGeometryIfMissing(thumbnail.ID, dst)
 			}
 			if gridFile == "" {
 				// Fall back to the old behaviour so the orphan cleanup doesn't have to
@@ -786,6 +787,23 @@ func (s *Scanner) keepDecidedGrid(thumbnail *models.Thumbnail) {
 
 	if err := s.db.SaveDecidedMovie(thumbnail, gridFile, time.Now()); err != nil {
 		s.log.WithError(err).WithField("movie", thumbnail.MoviePath).Error("Failed to record decided movie")
+	}
+}
+
+// recordGeometryIfMissing records a kept grid's layout unless it already is: a thumbnail can be
+// decided and leave the library before BackfillGeometry ever saw it
+func (s *Scanner) recordGeometryIfMissing(id int64, path string) {
+	has, err := s.db.HasGeometry(id)
+	if err != nil || has {
+		return
+	}
+	geometry, err := s.detectGeometry(path)
+	if err != nil {
+		s.log.WithError(err).WithField("thumbnail", path).Debug("Cannot read decided grid, geometry left for a later pass")
+		return
+	}
+	if err := s.db.SetGeometry(id, geometry); err != nil {
+		s.log.WithError(err).WithField("thumbnail", path).Error("Failed to save decided grid geometry")
 	}
 }
 

@@ -133,6 +133,45 @@ func (d *DB) SetGeometry(id int64, g models.GridGeometry) error {
 	return err
 }
 
+// DecidedGrid is a kept grid of a decided movie, by thumbnail ID and file name inside decided/
+type DecidedGrid struct {
+	ID       int64
+	GridFile string
+}
+
+// GetDecidedGridsWithoutGeometry returns kept grids of decided movies whose layout hasn't been
+// checked yet (e.g. movies that left the library before their layout was recorded)
+func (d *DB) GetDecidedGridsWithoutGeometry() ([]DecidedGrid, error) {
+	rows, err := d.db.Query(`
+		SELECT thumbnail_id, grid_file
+		FROM decided_movies
+		WHERE grid_file != ''
+		AND thumbnail_id NOT IN (SELECT thumbnail_id FROM grid_geometry)
+		ORDER BY thumbnail_id ASC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var grids []DecidedGrid
+	for rows.Next() {
+		var g DecidedGrid
+		if err := rows.Scan(&g.ID, &g.GridFile); err != nil {
+			return nil, err
+		}
+		grids = append(grids, g)
+	}
+	return grids, rows.Err()
+}
+
+// HasGeometry reports whether a thumbnail's grid layout has been recorded (known or unknown)
+func (d *DB) HasGeometry(id int64) (bool, error) {
+	var exists bool
+	err := d.db.QueryRow("SELECT EXISTS (SELECT 1 FROM grid_geometry WHERE thumbnail_id = ?)", id).Scan(&exists)
+	return exists, err
+}
+
 // GetThumbnailsWithoutGeometry returns thumbnails with a grid whose layout hasn't been checked yet
 func (d *DB) GetThumbnailsWithoutGeometry() ([]*models.Thumbnail, error) {
 	rows, err := d.db.Query(`

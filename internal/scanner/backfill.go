@@ -19,20 +19,36 @@ import (
 // thumbnails it had queued for deletion, as deleted/<id>.jpg.
 const BootstrapDirName = "bootstrap"
 
-// BackfillGeometry records the tile layout of grids that don't have one yet. A grid whose pixel
-// size matches the current layout gets it; any other size (e.g. imported grids) is recorded as
-// unknown so it isn't checked again.
+// BackfillGeometry records the tile layout of grids that don't have one yet, both in the library
+// and kept in the decided directory. A grid whose pixel size matches the current layout gets it;
+// any other size (e.g. imported grids) is recorded as unknown so it isn't checked again.
 func (s *Scanner) BackfillGeometry(ctx context.Context) error {
 	thumbnails, err := s.db.GetThumbnailsWithoutGeometry()
 	if err != nil {
 		return fmt.Errorf("failed to get thumbnails without geometry: %w", err)
 	}
-	if len(thumbnails) == 0 {
+	decided, err := s.db.GetDecidedGridsWithoutGeometry()
+	if err != nil {
+		return fmt.Errorf("failed to get decided grids without geometry: %w", err)
+	}
+
+	type grid struct {
+		id   int64
+		path string
+	}
+	grids := make([]grid, 0, len(thumbnails)+len(decided))
+	for _, t := range thumbnails {
+		grids = append(grids, grid{t.ID, filepath.Join(s.cfg.ThumbnailsDir, t.ThumbnailPath)})
+	}
+	for _, d := range decided {
+		grids = append(grids, grid{d.ID, filepath.Join(s.cfg.ThumbnailsDir, DecidedDirName, d.GridFile)})
+	}
+	if len(grids) == 0 {
 		return nil
 	}
 
 	var known, unknown int
-	for i, thumbnail := range thumbnails {
+	for i, g := range grids {
 		if i%50 == 0 {
 			select {
 			case <-ctx.Done():
@@ -41,12 +57,12 @@ func (s *Scanner) BackfillGeometry(ctx context.Context) error {
 			}
 		}
 
-		geometry, err := s.detectGeometry(filepath.Join(s.cfg.ThumbnailsDir, thumbnail.ThumbnailPath))
+		geometry, err := s.detectGeometry(g.path)
 		if err != nil {
-			s.log.WithError(err).WithField("thumbnail", thumbnail.ThumbnailPath).Debug("Cannot read grid, geometry left for a later pass")
+			s.log.WithError(err).WithField("thumbnail", g.path).Debug("Cannot read grid, geometry left for a later pass")
 			continue
 		}
-		if err := s.db.SetGeometry(thumbnail.ID, geometry); err != nil {
+		if err := s.db.SetGeometry(g.id, geometry); err != nil {
 			return fmt.Errorf("failed to save geometry: %w", err)
 		}
 		if geometry.Known() {

@@ -136,11 +136,40 @@ func TestCleanupKeepsDecidedGrids(t *testing.T) {
 	for _, it := range items {
 		byID[it.ID] = it
 	}
-	if it := byID[deleted.ID]; it.Live || it.GridURL != "decided/"+filepathID(deleted.ID) {
-		t.Errorf("deleted item = %+v", it)
+	// The layout was never recorded while the movies were in the library (as after the upgrade
+	// to v0.8.0, where the cleanup ran before the first geometry pass): keeping the grid records it
+	for _, th := range []*models.Thumbnail{deleted, archived} {
+		if it := byID[th.ID]; it.Live || it.GridURL != "decided/"+filepathID(th.ID) || !it.Geometry.Known() {
+			t.Errorf("%s item = %+v; want a decided grid with a known layout", th.MovieFilename, it)
+		}
 	}
 	if it := byID[kept.ID]; !it.Live {
 		t.Errorf("kept item = %+v", it)
+	}
+}
+
+func TestBackfillGeometryOfDecidedGrids(t *testing.T) {
+	env := newDecisionTestEnv(t)
+
+	// A grid already in decided/ without a layout, as left behind by v0.8.0
+	if err := os.MkdirAll(filepath.Join(env.thumbsDir, DecidedDirName), 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeJPEG(t, filepath.Join(env.thumbsDir, DecidedDirName, "41.jpg"), 2596, 740)
+	gone := &models.Thumbnail{ID: 41, MovieFilename: "gone.mp4"}
+	if err := env.db.SaveDecidedMovie(gone, "41.jpg", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := env.s.BackfillGeometry(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	items, _ := env.db.ListMLItems("", 0, 10)
+	if len(items) != 1 || items[0].ID != gone.ID || items[0].Geometry != env.s.thumbnailer.Geometry() {
+		t.Fatalf("items = %+v; want the decided grid with the standard layout", items)
+	}
+	if rest, _ := env.db.GetDecidedGridsWithoutGeometry(); len(rest) != 0 {
+		t.Errorf("%d decided grids still without geometry", len(rest))
 	}
 }
 
