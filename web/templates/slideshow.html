@@ -15,7 +15,7 @@
                 <span class="slideshow-counter">
                     Slide {{.Current}}/{{.Total}}{{if .OrderLabel}} · {{.OrderLabel}}{{end}}{{if gt .SessionDeletedSize 0}} · Deleted {{.SessionDeletedSizeFormatted}}{{end}}
                     {{with .Score}}<span class="score-badge {{if .Delete}}likely-delete{{else}}likely-keep{{end}}"
-                        title="Preference model prediction">{{if .Delete}}Delete{{else}}Keep{{end}} {{.Percent}}%</span>{{end}}
+                        title="Chance of this final outcome, as predicted by the preference model">{{.Label}} {{.Percent}}%</span>{{end}}
                 </span>
                 {{if .PendingDelete}}
                 <span class="deletion-status">Marked for deletion — press U to undo</span>

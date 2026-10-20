@@ -46,7 +46,7 @@ type DecisionsResponse struct {
 	NextAfterID int64             `json:"next_after_id"`
 }
 
-// ScoresRequest replaces all scores; Meta is merged into the model status shown on the control page
+// ScoresRequest replaces all scores and the model status shown on the control page (Meta)
 type ScoresRequest struct {
 	Scores []models.Score    `json:"scores"`
 	Meta   map[string]string `json:"meta"`

@@ -378,7 +378,7 @@ func (d *DB) ListDecisions(afterID int64, limit int) ([]models.Decision, error) 
 	return decisions, rows.Err()
 }
 
-// ReplaceScores replaces all scores and merges meta into the model status
+// ReplaceScores replaces all scores and the model status reported by the worker
 func (d *DB) ReplaceScores(scores []models.Score, meta map[string]string) error {
 	tx, err := d.db.Begin()
 	if err != nil {
@@ -397,6 +397,10 @@ func (d *DB) ReplaceScores(scores []models.Score, meta map[string]string) error 
 		); err != nil {
 			return err
 		}
+	}
+	// The worker reports its full status on every run; keys of an earlier model must not linger
+	if _, err := tx.Exec("DELETE FROM ml_meta"); err != nil {
+		return err
 	}
 	for k, v := range meta {
 		if _, err := tx.Exec("INSERT OR REPLACE INTO ml_meta (key, value) VALUES (?, ?)", k, v); err != nil {

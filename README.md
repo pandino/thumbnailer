@@ -148,7 +148,7 @@ The application provides two main pages:
 
 ### Slideshow Page (/slideshow)
 - Displays thumbnails in a fullscreen slideshow view
-- Shows unviewed thumbnails, at random or in score order, with the model's prediction ("Delete 87%" / "Keep 74%") next to the slide counter
+- Shows unviewed thumbnails, at random or in score order, with the model's prediction of the final outcome ("Delete 30%" / "Archive 40%") next to the slide counter
 - Tracks session progress and statistics
 - Keyboard shortcuts:
   - **→** (Right arrow) or **Space**: Mark as viewed and go to next thumbnail
@@ -190,9 +190,9 @@ Preference model worker (see below):
 
 ## Preference Model
 
-The app learns which movies you delete and which you keep. Every decision is logged: in the slideshow, delete (`D`), pass (moving on marks the movie viewed) and archive; in MPV, archive and delete after watching. Undo cancels the logged decision. Grids of deleted and archived movies are kept in `thumbnails/decided/` as training history.
+The app learns which movies you end up deleting and which you end up archiving. Every decision is logged: in the slideshow, delete (`D`), pass (moving on marks the movie viewed: undecided, to watch first) and archive; in MPV, archive and delete after watching. Undo cancels the logged decision. Grids of deleted and archived movies are kept in `thumbnails/decided/` as training history.
 
-`scripts/taste/` runs on a desktop machine: it embeds the grid frames with a SigLIP 2 image model on the CPU, trains small classifiers on your decisions and uploads a score per movie. The slideshow shows each score as a badge ("Delete 87%" / "Keep 74%"), and the control page can start a slideshow ordered by likely delete, most uncertain (teaches the model fastest) or likely keep. See `scripts/taste/README.md`.
+`scripts/taste/` runs on a desktop machine: it embeds the grid frames with a SigLIP 2 image model on the CPU, learns the final outcome of each movie (deleted < undecided < archived) and uploads its chances of ending up deleted and archived. The slideshow shows the likelier one as a badge ("Delete 30%" / "Archive 40%"), and the control page can start a slideshow ordered by likely delete, most uncertain (teaches the model fastest) or likely archive. See `scripts/taste/README.md`.
 
 `BACKFILL_LABELS=true` reconstructs the history from before decision logging, after each scan: a saved database snapshot and grids in `thumbnails/bootstrap/`, viewed movies as passed, and grids for the movies already in `ARCHIVE_DIR` (generated with ffmpeg). It's idempotent; turn it off once the log reports nothing left to backfill.
 

@@ -435,16 +435,19 @@ func (d *DB) randomUnviewed(order string, excludeIDs []int64) (*models.Thumbnail
 	return thumbnail, err
 }
 
-// scoreRanking returns the ORDER BY expression over scores.p_delete for a score-based slideshow
-// order, or "" for the random order
+// scoreRanking returns the ORDER BY expression over a thumbnail's scores for a score-based
+// slideshow order, or "" for the random order. Scores predict the final outcome: p_delete and
+// p_archive, the rest being "still undecided". Scores from before the archive model have no
+// p_archive; the expressions then fall back to p_delete alone.
 func scoreRanking(order string) string {
 	switch order {
 	case models.OrderLikelyDelete:
 		return "s.p_delete DESC"
 	case models.OrderLikelyKeep:
-		return "s.p_delete ASC"
+		return "COALESCE(s.p_archive, 1 - s.p_delete) DESC"
 	case models.OrderUncertain:
-		return "ABS(s.p_delete - 0.5) ASC"
+		// The most uncertain movie is the one whose likeliest outcome is least likely
+		return "MAX(s.p_delete, COALESCE(s.p_archive, 0), 1 - s.p_delete - COALESCE(s.p_archive, 0)) ASC"
 	default:
 		return ""
 	}

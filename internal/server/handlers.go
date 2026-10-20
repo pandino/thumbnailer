@@ -75,7 +75,7 @@ func (sd *SessionData) addSkipped(id int64) {
 var orderLabels = map[string]string{
 	models.OrderLikelyDelete: "likely delete first",
 	models.OrderUncertain:    "most uncertain first",
-	models.OrderLikelyKeep:   "likely keep first",
+	models.OrderLikelyKeep:   "likely archive first",
 }
 
 // getSessionFromCookie retrieves and validates session data from cookie
@@ -647,23 +647,36 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 
 // ScoreBadge is the preference model's prediction as shown on a slide
 type ScoreBadge struct {
-	Delete  bool // the model expects a delete
-	Percent int  // confidence in that expectation
+	Label   string // "Delete", "Archive", or "Keep" for scores without an archive probability
+	Delete  bool   // the badge is about deleting
+	Percent int    // probability of that outcome
 }
 
-// newScoreBadge turns a score into a badge, or nil if the thumbnail isn't scored. The percentage
-// is capped at 99: a rounded "100%" would claim a certainty the model doesn't have.
+// newScoreBadge turns a score into a badge, or nil if the thumbnail isn't scored. It shows the
+// likelier of the two final outcomes, deleted or archived; scores from before the archive model
+// show delete vs keep. The percentage is capped at 99: a rounded "100%" would claim a certainty
+// the model doesn't have.
 func newScoreBadge(score *models.Score) *ScoreBadge {
 	if score == nil {
 		return nil
 	}
-	badge := &ScoreBadge{Delete: score.PDelete >= 0.5}
-	p := score.PDelete
-	if !badge.Delete {
-		p = 1 - p
+	var badge *ScoreBadge
+	switch {
+	case score.PArchive != nil && *score.PArchive > score.PDelete:
+		badge = &ScoreBadge{Label: "Archive", Percent: percent(*score.PArchive)}
+	case score.PArchive != nil:
+		badge = &ScoreBadge{Label: "Delete", Delete: true, Percent: percent(score.PDelete)}
+	case score.PDelete >= 0.5:
+		badge = &ScoreBadge{Label: "Delete", Delete: true, Percent: percent(score.PDelete)}
+	default:
+		badge = &ScoreBadge{Label: "Keep", Percent: percent(1 - score.PDelete)}
 	}
-	badge.Percent = int(math.Min(math.Round(p*100), 99))
 	return badge
+}
+
+// percent rounds a probability to a percentage, at most 99
+func percent(p float64) int {
+	return int(math.Min(math.Round(p*100), 99))
 }
 
 // handleSlideshowNext shows the next thumbnail in the slideshow

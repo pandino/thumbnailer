@@ -366,3 +366,49 @@ func TestMLStatusLiveAUC(t *testing.T) {
 		t.Errorf("live AUC = %v on %d decisions; want 0.98 on 10", status.LiveAUC, status.LiveAUCDecisions)
 	}
 }
+
+func TestOrderedSelectionWithArchiveScores(t *testing.T) {
+	db := newTestDB(t)
+	liked := addTestThumbnail(t, db, "liked.mp4", models.StatusSuccess, 0)
+	disliked := addTestThumbnail(t, db, "disliked.mp4", models.StatusSuccess, 0)
+	unsure := addTestThumbnail(t, db, "unsure.mp4", models.StatusSuccess, 0)
+	undecided := addTestThumbnail(t, db, "undecided.mp4", models.StatusSuccess, 0)
+	p := func(v float64) *float64 { return &v }
+	err := db.ReplaceScores([]models.Score{
+		{ThumbnailID: liked.ID, PDelete: 0.1, PArchive: p(0.8)},       // likeliest outcome 0.8
+		{ThumbnailID: disliked.ID, PDelete: 0.6, PArchive: p(0.1)},    // 0.6
+		{ThumbnailID: unsure.ID, PDelete: 0.3, PArchive: p(0.3)},      // 0.4: least sure
+		{ThumbnailID: undecided.ID, PDelete: 0.05, PArchive: p(0.05)}, // 0.9 undecided
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for order, want := range map[string]int64{
+		models.OrderLikelyDelete: disliked.ID,
+		models.OrderLikelyKeep:   liked.ID,
+		models.OrderUncertain:    unsure.ID,
+	} {
+		th, err := db.GetUnviewedThumbnailOrdered(order)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if th == nil || th.ID != want {
+			t.Errorf("%s picked %+v; want %d", order, th, want)
+		}
+	}
+}
+
+func TestReplaceScoresReplacesMeta(t *testing.T) {
+	db := newTestDB(t)
+	db.ReplaceScores(nil, map[string]string{"genre_auc": "0.80", "model": "a"})
+	db.ReplaceScores(nil, map[string]string{"auc_delete": "0.81", "model": "b"})
+
+	status, err := db.GetMLStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, stale := status.Meta["genre_auc"]; stale || status.Meta["auc_delete"] != "0.81" || status.Meta["model"] != "b" {
+		t.Errorf("meta = %v; want only the latest run's keys", status.Meta)
+	}
+}

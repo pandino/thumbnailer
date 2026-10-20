@@ -77,8 +77,8 @@
                     <a href="/slideshow?new=true" class="start-slideshow">Start new</a>
                     {{if and .ML (gt .ML.Scored 0)}}
                     <a href="/slideshow?new=true&order=likely-delete" class="start-slideshow ordered" title="Movies the model expects you to delete come first">Likely delete first</a>
-                    <a href="/slideshow?new=true&order=uncertain" class="start-slideshow ordered" title="Movies the model is least sure about come first: deciding them teaches it the most">Most uncertain first</a>
-                    <a href="/slideshow?new=true&order=likely-keep" class="start-slideshow ordered" title="Movies the model expects you to keep come first">Likely keep first</a>
+                    <a href="/slideshow?new=true&order=uncertain" class="start-slideshow ordered" title="Movies whose final outcome the model is least sure about come first: deciding them teaches it the most">Most uncertain first</a>
+                    <a href="/slideshow?new=true&order=likely-keep" class="start-slideshow ordered" title="Movies the model expects you to end up archiving come first">Likely archive first</a>
                     {{end}}
                     {{if and .HasSession (gt .SessionDeletedSize 0)}}
                     <span class="session-deleted-info">Deleted in this session: {{.SessionDeletedSizeFormatted}}</span>
@@ -112,10 +112,17 @@
                         <span class="stat-label">Movies scored</span>
                         <span class="stat-size">{{.Embedded}} grids embedded</span>
                     </div>
-                    {{with index .Meta "genre_auc"}}
+                    {{with index .Meta "auc_delete"}}
                     <div class="stat-box success">
                         <span class="stat-value">{{.}}</span>
-                        <span class="stat-label">Delete model AUC</span>
+                        <span class="stat-label">Delete AUC</span>
+                        <span class="stat-size">cross-validated, 1.0 = perfect</span>
+                    </div>
+                    {{end}}
+                    {{with index .Meta "auc_archive"}}
+                    <div class="stat-box success">
+                        <span class="stat-value">{{.}}</span>
+                        <span class="stat-label">Archive AUC</span>
                         <span class="stat-size">cross-validated, 1.0 = perfect</span>
                     </div>
                     {{end}}
@@ -127,7 +134,7 @@
                     </div>
                     {{end}}
                 </div>
-                {{with index .Meta "trained_at"}}<p class="model-trained">Last trained {{.}}{{with index $.ML.Meta "model"}} · {{.}}{{end}}</p>{{end}}
+                {{with index .Meta "trained_at"}}<p class="model-trained">Last trained {{.}}{{with index $.ML.Meta "labels"}} on {{.}}{{end}}{{with index $.ML.Meta "model"}} · {{.}}{{end}}</p>{{end}}
             </section>
             {{end}}
 

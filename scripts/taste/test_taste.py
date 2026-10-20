@@ -67,39 +67,34 @@ class LabelsTest(unittest.TestCase):
         finals = taste.final_actions([d(2, 10, "slideshow", "pass"), d(1, 10, "slideshow", "delete")])
         self.assertEqual(finals[(10, "slideshow")], "pass")
 
-    def test_derive_labels(self):
-        labels = taste.derive_labels([
+
+
+class OutcomesTest(unittest.TestCase):
+    def test_final_outcome_wherever_decided(self):
+        result = taste.outcomes([
             d(1, 1, "slideshow", "delete"),
-            d(2, 2, "slideshow", "pass"),
-            d(3, 3, "slideshow", "archive"),
-            d(4, 4, "player", "archive"),   # never judged in the slideshow: implied keep
+            d(2, 2, "slideshow", "pass"),       # undecided: wants to watch it first
+            d(3, 3, "slideshow", "archive"),     # archived without watching
+            d(4, 4, "player", "archive"),
             d(5, 5, "slideshow", "pass"),
-            d(6, 5, "player", "delete"),
+            d(6, 5, "player", "delete"),         # passed, then deleted after watching
             d(7, 6, "slideshow", "delete"),
-            d(8, 6, "slideshow", "undo"),   # undone, nothing else: no label
+            d(8, 6, "slideshow", "undo"),        # undone, nothing else: no outcome
+            d(9, 7, "slideshow", "archive"),
+            d(10, 7, "player", "delete"),        # the later of two final decisions wins
         ])
-        self.assertEqual(labels["genre"], {1: 1, 2: 0, 3: 0, 4: 0, 5: 0})
-        self.assertEqual(labels["watch"], {4: 1, 5: 0})
+        D, U, A = taste.DELETED, taste.UNDECIDED, taste.ARCHIVED
+        self.assertEqual(result, {1: D, 2: U, 3: A, 4: A, 5: D, 7: D})
 
-    def test_class_counts(self):
-        self.assertEqual(taste.class_counts({1: 1, 2: 0, 3: 0}), (2, 1))
+    def test_outcome_summary(self):
+        D, U, A = taste.DELETED, taste.UNDECIDED, taste.ARCHIVED
+        self.assertEqual(taste.outcome_summary([D, U, U, A]), "1 deleted / 2 undecided / 1 archived")
 
-    def test_label_summary_names_each_class(self):
-        self.assertEqual(taste.label_summary("genre", 1704, 145), "1704 keep / 145 delete")
-        # After watching, label 0 is a delete, not a keep
-        self.assertEqual(taste.label_summary("watch", 1, 493), "1 delete / 493 archive")
-
-
-class JudgedAtTest(unittest.TestCase):
-    def test_standing_decisions_per_stage(self):
-        decisions = [
-            d(1, 1, "slideshow", "pass"),
-            d(2, 2, "slideshow", "delete"),
-            d(3, 2, "slideshow", "undo"),   # undone: no standing slideshow decision
-            d(4, 3, "player", "archive"),
-        ]
-        self.assertEqual(taste.judged_at(decisions, "slideshow"), {1})
-        self.assertEqual(taste.judged_at(decisions, "player"), {3})
+    def test_consistent_probabilities(self):
+        self.assertEqual(taste.consistent(0.2, 0.3), (0.2, 0.3))
+        p_delete, p_archive = taste.consistent(0.6, 0.6)
+        self.assertAlmostEqual(p_delete + p_archive, 1.0)
+        self.assertAlmostEqual(p_delete, 0.5)
 
 
 @unittest.skipUnless(__import__("importlib").util.find_spec("sklearn"), "scikit-learn not installed")
@@ -112,7 +107,7 @@ class CalibrationTest(unittest.TestCase):
         rng = np.random.default_rng(0)
         y = (rng.random(3000) < 0.1).astype(int)
         X = rng.normal(size=(3000, 8)) + y[:, None] * 0.8
-        model, auc, brier = taste.train(X, y, "genre")
+        model, auc, brier = taste.train(X, y, "delete")
         p = model.predict(X)
         self.assertAlmostEqual(p.mean(), y.mean(), delta=0.02)
         self.assertGreater(auc, 0.8)

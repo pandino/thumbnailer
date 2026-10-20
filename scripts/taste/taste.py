@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Learn which movies get deleted or kept, from the frames of their thumbnail grids.
+"""Learn which movies end up deleted or archived, from the frames of their thumbnail grids.
 
 Runs on a desktop that is only sometimes on; the thumbnailer server (no GPU, weak CPU) only
 stores what this worker produces. Each run:
@@ -7,8 +7,10 @@ stores what this worker produces. Each run:
 1. embeds grids the server has no embedding for yet: every grid is cut into its tiles (the
    layout comes from the server), blank tiles are dropped, each frame is embedded with a
    SigLIP image model and the frame embeddings are averaged;
-2. rebuilds the training set from all embeddings and the server's decision log, and trains
-   two logistic regressions: "delete from the grid" (slideshow) and "archive after watching";
+2. rebuilds the training set from all embeddings and the server's decision log. Every decided
+   movie has an outcome, deleted < undecided (passed in the slideshow, not watched yet) <
+   archived, wherever the decision was made; two calibrated logistic regressions learn
+   P(deleted) and P(archived) from it (an ordinal model, after Frank & Hall);
 3. scores every live thumbnail and uploads the scores, which the slideshow uses even when
    this machine is off.
 
@@ -45,11 +47,12 @@ UPLOAD_BATCH = 16
 # A tile whose grey levels vary less than this is blank (padding of short movies, black frames)
 BLANK_TILE_STDDEV = 6.0
 
-# Minimum examples per class before a model is trained and its scores used
-MIN_PER_CLASS = {"genre": 10, "watch": 20}
+# Final outcomes of a movie, in order
+DELETED, UNDECIDED, ARCHIVED = 0, 1, 2
+OUTCOME_NAMES = {DELETED: "deleted", UNDECIDED: "undecided", ARCHIVED: "archived"}
 
-# What label 0 and label 1 mean for each model
-CLASS_NAMES = {"genre": ("keep", "delete"), "watch": ("delete", "archive")}
+# Minimum deleted and archived movies before the respective model is trained and its scores used
+MIN_PER_CLASS = 10
 
 log = logging.getLogger("taste")
 
@@ -114,47 +117,51 @@ def final_actions(decisions):
     return {key: stack[-1] for key, stack in stacks.items() if stack}
 
 
-def derive_labels(decisions):
-    """Return training labels {"genre": {id: 0/1}, "watch": {id: 0/1}} from the decision log.
+def outcomes(decisions):
+    """Return each decided movie's final outcome {thumbnail_id: DELETED|UNDECIDED|ARCHIVED}.
 
-    genre (judged from the grid): deleted in the slideshow = 1; passed or archived in the
-    slideshow, or decided in the player (it made it past the slideshow) = 0.
-    watch (judged after watching): archived in the player = 1, deleted in the player = 0.
-    Skipped thumbnails have no decision and therefore no label.
+    A standing delete or archive, in the slideshow or after watching, is final; when a movie
+    has both (e.g. archived in the slideshow, deleted after watching) the later one wins. A
+    standing slideshow pass without a later decision is UNDECIDED: the user wants to watch the
+    movie before deciding. Skipped and undone decisions give no outcome.
     """
-    finals = final_actions(decisions)
-    genre, watch = {}, {}
-    for (tid, stage), action in finals.items():
-        if stage == "slideshow":
-            if action == "delete":
-                genre[tid] = 1
-            elif action in ("pass", "archive"):
-                genre[tid] = 0
-        elif stage == "player":
-            if action in ("archive", "delete"):
-                watch[tid] = 1 if action == "archive" else 0
-                genre.setdefault(tid, 0)
-    # A slideshow decision wins over the implied one from the player
-    for (tid, stage), action in finals.items():
-        if stage == "slideshow" and action == "delete":
-            genre[tid] = 1
-    return {"genre": genre, "watch": watch}
+    stacks = {}
+    for d in sorted(decisions, key=lambda d: d["id"]):
+        stack = stacks.setdefault((d["thumbnail_id"], d["stage"]), [])
+        if d["action"] == "undo":
+            if stack:
+                stack.pop()
+        else:
+            stack.append((d["id"], d["action"]))
+
+    standing = {}
+    for (tid, _), stack in stacks.items():
+        if stack:
+            standing.setdefault(tid, []).append(stack[-1])
+
+    result = {}
+    for tid, decided in standing.items():
+        final = [(i, a) for i, a in decided if a in ("delete", "archive")]
+        if final:
+            result[tid] = DELETED if max(final)[1] == "delete" else ARCHIVED
+        elif any(a == "pass" for _, a in decided):
+            result[tid] = UNDECIDED
+    return result
 
 
-def judged_at(decisions, stage):
-    """IDs of thumbnails with a standing decision at the given stage."""
-    return {tid for (tid, s) in final_actions(decisions) if s == stage}
+def outcome_summary(values):
+    """Describe a training set, e.g. "146 deleted / 1210 undecided / 493 archived"."""
+    values = list(values)
+    return " / ".join(f"{values.count(o)} {OUTCOME_NAMES[o]}" for o in (DELETED, UNDECIDED, ARCHIVED))
 
 
-def class_counts(labels):
-    ones = sum(1 for v in labels.values() if v == 1)
-    return len(labels) - ones, ones
-
-
-def label_summary(name, zeros, ones):
-    """Describe a model's training set, e.g. "1704 keep / 145 delete"."""
-    zero_name, one_name = CLASS_NAMES[name]
-    return f"{zeros} {zero_name} / {ones} {one_name}"
+def consistent(p_delete, p_archive):
+    """The two models are fitted separately, so their probabilities can add up to more than 1;
+    scale them down to a valid distribution over the three outcomes when they do."""
+    total = p_delete + p_archive
+    if total > 1:
+        return p_delete / total, p_archive / total
+    return p_delete, p_archive
 
 
 # --- HTTP --------------------------------------------------------------------
@@ -297,22 +304,21 @@ class CalibratedModel:
         return self.platt.predict_proba(logits)[:, 1]
 
 
-def train(X, y, name, calibration_mask=None):
-    """Fit a class-balanced logistic regression with cross-validated C, then calibrate it.
+def train(X, y, name):
+    """Fit a class-balanced logistic regression for the binary target y (1 = the named outcome),
+    with cross-validated C, then calibrate its probabilities on out-of-fold scores.
 
-    calibration_mask selects the examples whose outcome frequencies the probabilities should
-    match (e.g. movies judged in the slideshow, the population the badge is shown for); None
-    means all. Returns (CalibratedModel, cv_auc, brier), or (None, None, None) when there are
-    too few examples per class.
+    Returns (CalibratedModel, cv_auc, brier), or (None, None, None) when there are too few
+    examples of either class.
     """
     import numpy as np
     from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
     from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
     zeros, ones = int((y == 0).sum()), int((y == 1).sum())
-    if min(zeros, ones) < MIN_PER_CLASS[name]:
-        log.info("%s model: %s, need %d of each; not trained",
-                 name, label_summary(name, zeros, ones), MIN_PER_CLASS[name])
+    if min(zeros, ones) < MIN_PER_CLASS:
+        log.info("%s model: %d %s, %d other, need %d of each; not trained",
+                 name, ones, name, zeros, MIN_PER_CLASS)
         return None, None, None
 
     folds = min(5, zeros, ones)
@@ -326,15 +332,11 @@ def train(X, y, name, calibration_mask=None):
     cv = StratifiedKFold(folds, shuffle=True, random_state=0)
     same = LogisticRegression(C=model.C_[0], class_weight="balanced", max_iter=5000)
     logits = cross_val_predict(same, X, y, cv=cv, method="decision_function").reshape(-1, 1)
-    mask = np.ones(len(y), dtype=bool) if calibration_mask is None else np.asarray(calibration_mask)
-    if len(set(y[mask])) < 2:
-        mask = np.ones(len(y), dtype=bool)
-    platt = LogisticRegression(C=1e6, max_iter=1000).fit(logits[mask], y[mask])
-    p = platt.predict_proba(logits[mask])[:, 1]
-    brier = float(np.mean((p - y[mask]) ** 2))
+    platt = LogisticRegression(C=1e6, max_iter=1000).fit(logits, y)
+    brier = float(np.mean((platt.predict_proba(logits)[:, 1] - y) ** 2))
 
-    log.info("%s model: %s, C=%.3g, CV AUC %.3f, calibrated on %d examples (Brier %.4f)",
-             name, label_summary(name, zeros, ones), model.C_[0], auc, int(mask.sum()), brier)
+    log.info("%s model: %d %s, %d other, C=%.3g, CV AUC %.3f, Brier %.4f",
+             name, ones, name, zeros, model.C_[0], auc, brier)
     return CalibratedModel(model, platt), auc, brier
 
 
@@ -397,43 +399,42 @@ class Worker:
 
         vectors = {e["id"]: e["vector"] for e in self.server.embeddings(self.model_key)}
         live = {item["id"] for item in self.server.items() if item["live"]}
-        decisions = list(self.server.decisions())
-        labels = derive_labels(decisions)
-        # Probabilities are calibrated against the decisions of the stage each model predicts
-        judged = {"genre": judged_at(decisions, "slideshow"), "watch": judged_at(decisions, "player")}
+        outcome = outcomes(self.server.decisions())
         log.info("%d embeddings, %d live grids", len(vectors), len(live))
 
+        ids = [tid for tid in outcome if tid in vectors]
+        y = np.array([outcome[tid] for tid in ids])
         meta = {
             "model": self.model_key,
             "trained_at": datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M"),
+            "labels": outcome_summary(y.tolist()),
         }
+        if not ids:
+            log.info("No decided movies yet, scores not updated")
+            return
+        X = np.array([vectors[tid] for tid in ids], dtype=np.float32)
+
+        scored = sorted(tid for tid in live if tid in vectors)
+        X_live = np.array([vectors[tid] for tid in scored], dtype=np.float32)
         predictions = {}
-        for name in ("genre", "watch"):
-            ids = [tid for tid in labels[name] if tid in vectors]
-            zeros, ones = class_counts({tid: labels[name][tid] for tid in ids})
-            meta[f"{name}_labels"] = label_summary(name, zeros, ones)
-            if not ids:
-                continue
-            X = np.array([vectors[tid] for tid in ids], dtype=np.float32)
-            y = np.array([labels[name][tid] for tid in ids])
-            model, auc, brier = train(X, y, name, [tid in judged[name] for tid in ids])
+        # Ordinal outcome as two binary models over all decided movies: P(deleted), P(archived)
+        for name, target in (("delete", DELETED), ("archive", ARCHIVED)):
+            model, auc, brier = train(X, (y == target).astype(int), name)
             if model is None:
                 continue
-            meta[f"{name}_auc"] = f"{auc:.2f}"
-            meta[f"{name}_brier"] = f"{brier:.3f}"
-            scored = sorted(tid for tid in live if tid in vectors)
+            meta[f"auc_{name}"] = f"{auc:.2f}"
+            meta[f"brier_{name}"] = f"{brier:.3f}"
             if scored:
-                p = model.predict(np.array([vectors[tid] for tid in scored], dtype=np.float32))
-                predictions[name] = dict(zip(scored, p.tolist()))
+                predictions[name] = model.predict(X_live).tolist()
 
-        if "genre" not in predictions:
+        if "delete" not in predictions:
             log.info("No delete model yet, scores not updated")
             return
         scores = []
-        for tid, p_delete in predictions["genre"].items():
-            score = {"id": tid, "p_delete": p_delete}
-            if "watch" in predictions:
-                score["p_archive"] = predictions["watch"][tid]
+        for i, tid in enumerate(scored):
+            score = {"id": tid, "p_delete": predictions["delete"][i]}
+            if "archive" in predictions:
+                score["p_delete"], score["p_archive"] = consistent(score["p_delete"], predictions["archive"][i])
             scores.append(score)
         if self.args.dry_run:
             log.info("Dry run: would upload %d scores with %s", len(scores), meta)

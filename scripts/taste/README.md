@@ -1,31 +1,30 @@
 # Preference model worker
 
-Learns which movies you delete and which you keep, from the frames of their thumbnail grids, and scores the movies you haven't decided on yet. The slideshow shows each score as a badge and can sort by it.
+Learns which movies you end up deleting and which you end up archiving, from the frames of their thumbnail grids, and scores the movies you haven't decided on yet. The slideshow shows each score as a badge and can sort by it.
 
 The thumbnailer server has no GPU and a weak CPU, so this worker runs on a desktop that's only on some of the time. The server stores everything the worker produces (embeddings and scores), so the slideshow uses the latest scores even while the desktop is off.
 
 ## What it learns from
 
-The server logs every decision (`/api/v1/ml/decisions`):
+The server logs every decision (`/api/v1/ml/decisions`). Every movie ends up in one of two places, so the model learns one ordered outcome, wherever the decision was made:
 
-| Where | Decision | Delete model ("genre") | Watch model |
-|---|---|---|---|
-| Slideshow | `D` delete | 1 | – |
-| Slideshow | Space/→ (viewed, "pass") or archive | 0 | – |
-| Slideshow | `S` skip | no label | – |
-| Player (MPV scripts) | archive | 0 | 1 |
-| Player (MPV scripts) | delete | 0 | 0 |
+| Outcome | From |
+|---|---|
+| **deleted** | `D` in the slideshow, or delete in MPV after watching |
+| **undecided** | Space/→ in the slideshow ("pass": watch it before deciding), not decided in MPV yet |
+| **archived** | archive (`M`) in the slideshow, or archive in MPV after watching |
+| no outcome | `S` (skip), or a decision undone with `U` |
 
-`U` (undo) cancels the decision it undoes. The grids of deleted and archived movies are kept in `thumbnails/decided/`, so the training history survives the files themselves.
+A passed movie moves from undecided to deleted or archived once you decide on it in MPV; if a movie has both a delete and an archive, the later one counts. The grids of deleted and archived movies are kept in `thumbnails/decided/`, so the training history survives the files themselves.
 
-The **delete model** predicts the slideshow decision from the grid alone. The **watch model** predicts what you'll do after watching. It's only trained once it has at least 20 examples of each outcome, and until then nothing uses it.
+The ordering deleted < undecided < archived is modelled with two classifiers over all decided movies (after Frank & Hall): one for P(deleted), one for P(archived); the rest is "still undecided". Measured on production data, this ranks better than a single delete-vs-rest model (AUC deleted vs archived 0.93 vs 0.91, archived among undecided 0.82 vs 0.74) and as well at spotting deletes among undecided movies (0.78). Each model needs at least 10 movies of its outcome before it's trained.
 
 ## How a run works
 
 1. **Embed.** Each grid without an embedding is downloaded and cut into its tiles (the server reports the layout). Blank tiles are dropped and up to 16 evenly spaced frames are embedded with SigLIP 2 (`ViT-B-16-SigLIP2-256`). The frame embeddings are averaged. This takes about 1.3 s per grid on a Ryzen 7 5700X3D CPU (0.15 s on the GPU, see below), and each run stops after `--max-minutes` (default 20), so the first pass over a few thousand grids is spread over a few runs.
-2. **Train.** A class-balanced logistic regression per model, with cross-validated regularization, so the rare deletes aren't drowned out by the keeps. Its cross-validated AUC appears on the control page.
-3. **Calibrate.** Balanced weighting ranks well but inflates the probabilities: on production data, movies scored "50–70%" were actually deleted 15% of the time. A Platt scaling fitted on the model's out-of-fold scores maps them to observed frequencies, measured on the population the score is shown for (movies judged in the slideshow for the delete model). It is monotonic, so the ranking and the slideshow orders don't change; the Brier score (lower is better) is reported as `genre_brier`.
-4. **Score.** All live grids are scored and uploaded, replacing the previous scores.
+2. **Train.** A class-balanced logistic regression for each outcome (deleted, archived), with cross-validated regularization, so the rarer outcome isn't drowned out. Their cross-validated AUCs appear on the control page (`auc_delete`, `auc_archive`).
+3. **Calibrate.** Balanced weighting ranks well but inflates the probabilities: on production data, movies scored "50–70%" were actually deleted 15% of the time. A Platt scaling fitted on each model's out-of-fold scores maps them to observed frequencies. It is monotonic, so the ranking and the slideshow orders don't change; the Brier scores (lower is better) are reported as `brier_delete` and `brier_archive`. If the two probabilities add up to more than 1 they are scaled down together.
+4. **Score.** All live grids are scored (`p_delete`, `p_archive`) and uploaded, replacing the previous scores. The slideshow badge shows the likelier outcome ("Delete 30%" / "Archive 40%"); "likely delete first" sorts by `p_delete`, "likely archive first" by `p_archive`, and "most uncertain first" puts first the movies whose likeliest outcome is least likely.
 
 ## Install
 
