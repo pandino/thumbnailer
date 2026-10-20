@@ -48,6 +48,9 @@ BLANK_TILE_STDDEV = 6.0
 # Minimum examples per class before a model is trained and its scores used
 MIN_PER_CLASS = {"genre": 10, "watch": 20}
 
+# What label 0 and label 1 mean for each model
+CLASS_NAMES = {"genre": ("keep", "delete"), "watch": ("delete", "archive")}
+
 log = logging.getLogger("taste")
 
 
@@ -141,6 +144,12 @@ def derive_labels(decisions):
 def class_counts(labels):
     ones = sum(1 for v in labels.values() if v == 1)
     return len(labels) - ones, ones
+
+
+def label_summary(name, zeros, ones):
+    """Describe a model's training set, e.g. "1704 keep / 145 delete"."""
+    zero_name, one_name = CLASS_NAMES[name]
+    return f"{zeros} {zero_name} / {ones} {one_name}"
 
 
 # --- HTTP --------------------------------------------------------------------
@@ -274,8 +283,8 @@ def train(X, y, name):
 
     zeros, ones = int((y == 0).sum()), int((y == 1).sum())
     if min(zeros, ones) < MIN_PER_CLASS[name]:
-        log.info("%s model: %d/%d examples per class, need %d of each; not trained",
-                 name, zeros, ones, MIN_PER_CLASS[name])
+        log.info("%s model: %s, need %d of each; not trained",
+                 name, label_summary(name, zeros, ones), MIN_PER_CLASS[name])
         return None, None
 
     folds = min(5, zeros, ones)
@@ -284,7 +293,7 @@ def train(X, y, name):
     model.fit(X, y)
     # Mean CV AUC of the chosen C
     auc = float(np.max(model.scores_[1].mean(axis=0)))
-    log.info("%s model: %d keep / %d positive, C=%.3g, CV AUC %.3f", name, zeros, ones, model.C_[0], auc)
+    log.info("%s model: %s, C=%.3g, CV AUC %.3f", name, label_summary(name, zeros, ones), model.C_[0], auc)
     return model, auc
 
 
@@ -358,7 +367,7 @@ class Worker:
         for name in ("genre", "watch"):
             ids = [tid for tid in labels[name] if tid in vectors]
             zeros, ones = class_counts({tid: labels[name][tid] for tid in ids})
-            meta[f"{name}_labels"] = f"{zeros} keep / {ones} {'delete' if name == 'genre' else 'archive'}"
+            meta[f"{name}_labels"] = label_summary(name, zeros, ones)
             if not ids:
                 continue
             X = np.array([vectors[tid] for tid in ids], dtype=np.float32)

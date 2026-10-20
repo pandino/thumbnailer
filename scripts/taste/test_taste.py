@@ -84,6 +84,11 @@ class LabelsTest(unittest.TestCase):
     def test_class_counts(self):
         self.assertEqual(taste.class_counts({1: 1, 2: 0, 3: 0}), (2, 1))
 
+    def test_label_summary_names_each_class(self):
+        self.assertEqual(taste.label_summary("genre", 1704, 145), "1704 keep / 145 delete")
+        # After watching, label 0 is a delete, not a keep
+        self.assertEqual(taste.label_summary("watch", 1, 493), "1 delete / 493 archive")
+
 
 class DeviceTest(unittest.TestCase):
     def test_resolve_device(self):
