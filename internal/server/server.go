@@ -81,9 +81,11 @@ func (s *Server) routes() {
 	s.router.Use(s.loggingMiddleware)
 	s.router.Use(s.recoveryMiddleware)
 
-	// Static files
+	// Static files. Their URLs don't change between versions and the file server sends no
+	// Cache-Control, so browsers kept using a stale stylesheet for days after a deploy; no-cache
+	// makes them revalidate (a cheap 304 when unchanged) on every use.
 	fs := http.FileServer(http.Dir(s.cfg.StaticDir))
-	s.router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", fs))
+	s.router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", revalidate(fs)))
 
 	// Thumbnails
 	tfs := http.FileServer(http.Dir(s.cfg.ThumbnailsDir))
@@ -132,6 +134,14 @@ func (s *Server) routes() {
 
 	// 404 handler
 	s.router.NotFoundHandler = http.HandlerFunc(s.handleNotFound)
+}
+
+// revalidate makes browsers check with the server before reusing a cached response
+func revalidate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // loggingMiddleware logs HTTP requests and records metrics

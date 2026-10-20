@@ -3,11 +3,13 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/gorilla/mux"
 	"github.com/pandino/movie-thumbnailer-go/internal/config"
 	"github.com/pandino/movie-thumbnailer-go/internal/database"
+	"github.com/pandino/movie-thumbnailer-go/internal/metrics"
 	"github.com/pandino/movie-thumbnailer-go/internal/models"
 	"github.com/sirupsen/logrus"
 )
@@ -47,4 +49,15 @@ func addDBTestThumbnail(t *testing.T, db *database.DB, name string, viewed int) 
 		t.Fatalf("failed to upsert thumbnail: %v", err)
 	}
 	return th
+}
+
+// metrics.New registers global Prometheus collectors, so tests share one instance
+var (
+	testMetricsOnce sync.Once
+	testMetrics     *metrics.Metrics
+)
+
+func sharedTestMetrics() *metrics.Metrics {
+	testMetricsOnce.Do(func() { testMetrics = metrics.New() })
+	return testMetrics
 }
