@@ -86,6 +86,28 @@ class OutcomesTest(unittest.TestCase):
         D, U, A = taste.DELETED, taste.UNDECIDED, taste.ARCHIVED
         self.assertEqual(result, {1: D, 2: U, 3: A, 4: A, 5: D, 7: D})
 
+    def test_final_decisions_record_the_stage(self):
+        D, U, A = taste.DELETED, taste.UNDECIDED, taste.ARCHIVED
+        final = taste.final_decisions([
+            d(1, 1, "slideshow", "delete"),
+            d(2, 2, "slideshow", "pass"),
+            d(3, 2, "player", "delete"),     # passed, deleted after watching
+            d(4, 3, "slideshow", "pass"),
+            d(5, 3, "player", "archive"),
+            d(6, 4, "slideshow", "pass"),
+        ])
+        self.assertEqual(final, {1: (D, "slideshow"), 2: (D, "player"), 3: (A, "player"), 4: (U, "slideshow")})
+
+    def test_watched_deletes_weigh_less(self):
+        D, U, A = taste.DELETED, taste.UNDECIDED, taste.ARCHIVED
+        final = {1: (D, "slideshow"), 2: (D, "player"), 3: (A, "player"), 4: (U, "slideshow")}
+        self.assertEqual(taste.delete_weights(final, [1, 2, 3, 4], 0.5), [1.0, 0.5, 1.0, 1.0])
+
+    def test_watched_delete_weight_option(self):
+        self.assertEqual(taste.parse_args(["--server", "http://x"]).watched_delete_weight, 0.5)
+        with self.assertRaises(SystemExit):
+            taste.parse_args(["--server", "http://x", "--watched-delete-weight", "0"])
+
     def test_outcome_summary(self):
         D, U, A = taste.DELETED, taste.UNDECIDED, taste.ARCHIVED
         self.assertEqual(taste.outcome_summary([D, U, U, A]), "1 deleted / 2 undecided / 1 archived")
@@ -111,6 +133,10 @@ class CalibrationTest(unittest.TestCase):
         p = model.predict(X)
         self.assertAlmostEqual(p.mean(), y.mean(), delta=0.02)
         self.assertGreater(auc, 0.8)
+        # Sample weights are accepted, and down-weighting positives lowers their predictions
+        w = np.where(y == 1, 0.3, 1.0)
+        weighted, _, _ = taste.train(X, y, "delete", w)
+        self.assertLess(weighted.predict(X).mean(), p.mean())
         # Calibration is monotonic: the ranking is the balanced model's ranking
         raw = model.model.decision_function(X)
         self.assertTrue(np.all(np.diff(p[np.argsort(raw)]) >= -1e-12))

@@ -54,6 +54,10 @@ OUTCOME_NAMES = {DELETED: "deleted", UNDECIDED: "undecided", ARCHIVED: "archived
 # Minimum deleted and archived movies before the respective model is trained and its scores used
 MIN_PER_CLASS = 10
 
+# A delete made after watching counts this much in the delete model, relative to a slideshow
+# delete: the grid looked worth watching, so it says less about what to delete on sight
+DEFAULT_WATCHED_DELETE_WEIGHT = 0.5
+
 log = logging.getLogger("taste")
 
 
@@ -118,7 +122,13 @@ def final_actions(decisions):
 
 
 def outcomes(decisions):
-    """Return each decided movie's final outcome {thumbnail_id: DELETED|UNDECIDED|ARCHIVED}.
+    """Return each decided movie's final outcome {thumbnail_id: DELETED|UNDECIDED|ARCHIVED}."""
+    return {tid: outcome for tid, (outcome, _) in final_decisions(decisions).items()}
+
+
+def final_decisions(decisions):
+    """Return each decided movie's final outcome and the stage it was decided at
+    {thumbnail_id: (DELETED|UNDECIDED|ARCHIVED, "slideshow"|"player")}.
 
     A standing delete or archive, in the slideshow or after watching, is final; when a movie
     has both (e.g. archived in the slideshow, deleted after watching) the later one wins. A
@@ -132,7 +142,7 @@ def outcomes(decisions):
             if stack:
                 stack.pop()
         else:
-            stack.append((d["id"], d["action"]))
+            stack.append((d["id"], d["action"], d["stage"]))
 
     standing = {}
     for (tid, _), stack in stacks.items():
@@ -141,12 +151,19 @@ def outcomes(decisions):
 
     result = {}
     for tid, decided in standing.items():
-        final = [(i, a) for i, a in decided if a in ("delete", "archive")]
+        final = [x for x in decided if x[1] in ("delete", "archive")]
         if final:
-            result[tid] = DELETED if max(final)[1] == "delete" else ARCHIVED
-        elif any(a == "pass" for _, a in decided):
-            result[tid] = UNDECIDED
+            _, action, stage = max(final)
+            result[tid] = (DELETED if action == "delete" else ARCHIVED, stage)
+        elif any(a == "pass" for _, a, _ in decided):
+            result[tid] = (UNDECIDED, "slideshow")
     return result
+
+
+def delete_weights(final, ids, watched_delete_weight):
+    """Training weights for the delete model: a delete made after watching (in the player) is a
+    weaker "not interested" signal than a delete from the slideshow grid, so it counts less."""
+    return [watched_delete_weight if final[tid] == (DELETED, "player") else 1.0 for tid in ids]
 
 
 def outcome_summary(values):
@@ -304,9 +321,10 @@ class CalibratedModel:
         return self.platt.predict_proba(logits)[:, 1]
 
 
-def train(X, y, name):
+def train(X, y, name, sample_weight=None):
     """Fit a class-balanced logistic regression for the binary target y (1 = the named outcome),
-    with cross-validated C, then calibrate its probabilities on out-of-fold scores.
+    with cross-validated C, then calibrate its probabilities on out-of-fold scores. sample_weight
+    (default all 1) scales how much each example counts, in fitting and calibration alike.
 
     Returns (CalibratedModel, cv_auc, brier), or (None, None, None) when there are too few
     examples of either class.
@@ -315,6 +333,7 @@ def train(X, y, name):
     from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
     from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
+    w = np.ones(len(y)) if sample_weight is None else np.asarray(sample_weight, dtype=float)
     zeros, ones = int((y == 0).sum()), int((y == 1).sum())
     if min(zeros, ones) < MIN_PER_CLASS:
         log.info("%s model: %d %s, %d other, need %d of each; not trained",
@@ -324,16 +343,17 @@ def train(X, y, name):
     folds = min(5, zeros, ones)
     model = LogisticRegressionCV(Cs=np.logspace(-2, 2, 9), cv=folds, scoring="roc_auc",
                                  class_weight="balanced", max_iter=5000)
-    model.fit(X, y)
+    model.fit(X, y, sample_weight=w)
     # Mean CV AUC of the chosen C
     auc = float(np.max(model.scores_[1].mean(axis=0)))
 
     # Out-of-fold scores of the same model, so the calibration sees honest, unseen-data scores
     cv = StratifiedKFold(folds, shuffle=True, random_state=0)
     same = LogisticRegression(C=model.C_[0], class_weight="balanced", max_iter=5000)
-    logits = cross_val_predict(same, X, y, cv=cv, method="decision_function").reshape(-1, 1)
-    platt = LogisticRegression(C=1e6, max_iter=1000).fit(logits, y)
-    brier = float(np.mean((platt.predict_proba(logits)[:, 1] - y) ** 2))
+    logits = cross_val_predict(same, X, y, cv=cv, method="decision_function",
+                               params={"sample_weight": w}).reshape(-1, 1)
+    platt = LogisticRegression(C=1e6, max_iter=1000).fit(logits, y, sample_weight=w)
+    brier = float(np.average((platt.predict_proba(logits)[:, 1] - y) ** 2, weights=w))
 
     log.info("%s model: %d %s, %d other, C=%.3g, CV AUC %.3f, Brier %.4f",
              name, ones, name, zeros, model.C_[0], auc, brier)
@@ -399,7 +419,8 @@ class Worker:
 
         vectors = {e["id"]: e["vector"] for e in self.server.embeddings(self.model_key)}
         live = {item["id"] for item in self.server.items() if item["live"]}
-        outcome = outcomes(self.server.decisions())
+        final = final_decisions(self.server.decisions())
+        outcome = {tid: o for tid, (o, _) in final.items()}
         log.info("%d embeddings, %d live grids", len(vectors), len(live))
 
         ids = [tid for tid in outcome if tid in vectors]
@@ -418,8 +439,9 @@ class Worker:
         X_live = np.array([vectors[tid] for tid in scored], dtype=np.float32)
         predictions = {}
         # Ordinal outcome as two binary models over all decided movies: P(deleted), P(archived)
+        weights = {"delete": delete_weights(final, ids, self.args.watched_delete_weight), "archive": None}
         for name, target in (("delete", DELETED), ("archive", ARCHIVED)):
-            model, auc, brier = train(X, (y == target).astype(int), name)
+            model, auc, brier = train(X, (y == target).astype(int), name, weights[name])
             if model is None:
                 continue
             meta[f"auc_{name}"] = f"{auc:.2f}"
@@ -458,6 +480,9 @@ def parse_args(argv):
     p.add_argument("--server", required=True, help="thumbnailer base URL, e.g. http://192.168.1.35:8080")
     p.add_argument("--arch", default=DEFAULT_ARCH, help=f"open_clip model (default {DEFAULT_ARCH})")
     p.add_argument("--pretrained", default=DEFAULT_PRETRAINED, help=f"open_clip weights (default {DEFAULT_PRETRAINED})")
+    p.add_argument("--watched-delete-weight", type=float, default=DEFAULT_WATCHED_DELETE_WEIGHT,
+                   help="how much a delete made after watching counts in the delete model, relative to "
+                        f"a slideshow delete (default {DEFAULT_WATCHED_DELETE_WEIGHT})")
     p.add_argument("--max-frames", type=int, default=DEFAULT_MAX_FRAMES,
                    help=f"frames per grid to embed, 0 for all (default {DEFAULT_MAX_FRAMES})")
     p.add_argument("--max-minutes", type=float, default=20, help="time box for embedding per run (default 20)")
@@ -473,7 +498,10 @@ def parse_args(argv):
     p.add_argument("--lock", default=os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "thumbnailer-taste.lock"),
                    help="lock file preventing overlapping runs")
     p.add_argument("-v", "--verbose", action="store_true")
-    return p.parse_args(argv)
+    args = p.parse_args(argv)
+    if not 0 < args.watched_delete_weight <= 1:
+        p.error("--watched-delete-weight must be in (0, 1]")
+    return args
 
 
 def main(argv=None):

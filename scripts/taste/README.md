@@ -15,7 +15,7 @@ The server logs every decision (`/api/v1/ml/decisions`). Every movie ends up in 
 | **archived** | archive (`M`) in the slideshow, or archive in MPV after watching |
 | no outcome | `S` (skip), or a decision undone with `U` |
 
-A passed movie moves from undecided to deleted or archived once you decide on it in MPV; if a movie has both a delete and an archive, the later one counts. The grids of deleted and archived movies are kept in `thumbnails/decided/`, so the training history survives the files themselves.
+A passed movie moves from undecided to deleted or archived once you decide on it in MPV; if a movie has both a delete and an archive, the later one counts. A delete made after watching counts half as much in the delete model as a delete from the slideshow (`--watched-delete-weight`, default 0.5): the grid looked worth watching, so it says less about what to delete on sight. Archives count fully wherever they're made. The grids of deleted and archived movies are kept in `thumbnails/decided/`, so the training history survives the files themselves.
 
 The ordering deleted < undecided < archived is modelled with two classifiers over all decided movies (after Frank & Hall): one for P(deleted), one for P(archived); the rest is "still undecided". Measured on production data, this ranks better than a single delete-vs-rest model (AUC deleted vs archived 0.93 vs 0.91, archived among undecided 0.82 vs 0.74) and as well at spotting deletes among undecided movies (0.78). Each model needs at least 10 movies of its outcome before it's trained.
 
@@ -50,6 +50,7 @@ journalctl --user -u thumbnailer-taste -f                      # timer runs
 | Flag | Meaning |
 |---|---|
 | `--arch`, `--pretrained` | open_clip model (default `ViT-B-16-SigLIP2-256` / `webli`) |
+| `--watched-delete-weight` | weight of a delete made after watching, relative to a slideshow delete (default 0.5) |
 | `--max-frames` | frames per grid, 0 for all 32 (default 16) |
 | `--max-minutes` | time box for embedding (default 20) |
 | `--device` | `cpu` (default), `cuda` (GPU) or `auto` (GPU if usable) |
