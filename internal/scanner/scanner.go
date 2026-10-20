@@ -235,9 +235,23 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 		// Continue processing
 	}
 
-	// Generate expected thumbnail filename
 	movieFilename := filepath.Base(moviePath)
-	thumbnailFilename := strings.TrimSuffix(movieFilename, filepath.Ext(movieFilename)) + ".jpg"
+
+	// Get existing record if any
+	existingThumbnail, err := s.db.GetByMoviePath(movieFilename)
+	if err != nil {
+		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to check database")
+		return fmt.Errorf("failed to check database for movie %s: %w", moviePath, err)
+	}
+
+	// New grids are named after the full movie filename. A row keeps the grid it already
+	// has, so older rows named without the movie extension are not regenerated.
+	thumbnailFilename := ffmpeg.GridFilename(movieFilename)
+	if existingThumbnail != nil && existingThumbnail.ThumbnailPath != "" {
+		if _, err := os.Stat(filepath.Join(s.cfg.ThumbnailsDir, existingThumbnail.ThumbnailPath)); err == nil {
+			thumbnailFilename = existingThumbnail.ThumbnailPath
+		}
+	}
 	thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, thumbnailFilename)
 
 	// Get file size
@@ -260,13 +274,6 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 	fileExists := false
 	if _, err := os.Stat(thumbnailPath); err == nil {
 		fileExists = true
-	}
-
-	// Get existing record if any
-	existingThumbnail, err := s.db.GetByMoviePath(movieFilename)
-	if err != nil {
-		s.log.WithError(err).WithField("movie", moviePath).Error("Failed to check database")
-		return fmt.Errorf("failed to check database for movie %s: %w", moviePath, err)
 	}
 
 	// If thumbnail exists in DB and is successful, and the file exists, nothing to do
@@ -395,6 +402,7 @@ func (s *Scanner) processMovie(ctx context.Context, moviePath string, current in
 
 	// Update our record with the generated thumbnail data
 	thumbnail.Status = generatedThumbnail.Status
+	thumbnail.ThumbnailPath = generatedThumbnail.ThumbnailPath
 	thumbnail.Width = generatedThumbnail.Width
 	thumbnail.Height = generatedThumbnail.Height
 	thumbnail.Duration = generatedThumbnail.Duration

@@ -65,6 +65,7 @@ podman run -d --name movie-thumbnailer \
 You can also set the environment variable `IMPORT_EXISTING=true` to enable this feature.
 
 When using this feature:
+- A grid is imported only when it is named after the full movie filename plus `.jpg` (`movie.mp4.jpg` for `movie.mp4`), so movies that differ only by extension never share a grid
 - Existing thumbnails will be marked with a special "imported" source tag
 - Metadata (duration, resolution, etc.) will be extracted from the original movie file
 - The thumbnail file won't be regenerated, saving processing time

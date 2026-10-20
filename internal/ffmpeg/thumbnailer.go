@@ -44,11 +44,18 @@ func New(cfg *config.Config, log *logrus.Logger, metrics *metrics.Metrics) *Thum
 	}
 }
 
+// GridFilename is the name of a movie's grid: the full movie filename plus ".jpg", so movies
+// that differ only by extension (X.mp4, X.mkv) never share a grid. Older rows store a name
+// without the movie extension; their stored ThumbnailPath stays valid.
+func GridFilename(movieFilename string) string {
+	return movieFilename + ".jpg"
+}
+
 // CreateThumbnail generates a thumbnail grid for a movie file
 func (t *Thumbnailer) CreateThumbnail(ctx context.Context, moviePath string, db *database.DB) (*models.Thumbnail, error) {
 	// Generate thumbnail filename
 	movieFilename := filepath.Base(moviePath)
-	thumbnailFilename := strings.TrimSuffix(movieFilename, filepath.Ext(movieFilename)) + ".jpg"
+	thumbnailFilename := GridFilename(movieFilename)
 	thumbnailPath := filepath.Join(t.cfg.ThumbnailsDir, thumbnailFilename)
 
 	// Initialize thumbnail record
