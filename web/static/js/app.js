@@ -100,16 +100,15 @@ function renderThumbnails(container, thumbnails) {
                 </div>
             `;
         } else {
-            // For non-deleted items, link to slideshow
             itemContent = `
-                <a href="/slideshow?id=${thumbnail.id}">
+                <div class="thumbnail-wrapper">
                     ${thumbnail.source === 'imported' ? '<span class="source-badge imported">Imported</span>' : ''}
                     <img src="/thumbnails/${thumbnail.thumbnail_path}" alt="${thumbnail.movie_filename}">
                     <div class="thumbnail-info">
                         <div class="thumbnail-title">${thumbnail.movie_filename}</div>
                         <div class="thumbnail-meta">${thumbnailMeta(thumbnail, thumbnail.created_at)}</div>
                     </div>
-                </a>
+                </div>
             `;
         }
         

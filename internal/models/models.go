@@ -149,12 +149,14 @@ func ValidOrder(order string) bool {
 
 // MLStatus summarizes the preference model for the control page
 type MLStatus struct {
-	Decisions      map[string]int    `json:"decisions"` // "stage/action" -> count, undo excluded
-	Embedded       int               `json:"embedded"`
-	Scored         int               `json:"scored"`
-	Meta           map[string]string `json:"meta"`            // reported by the worker
-	AgreementN     int               `json:"agreement_n"`     // recent slideshow decisions that had a score
-	AgreementRatio float64           `json:"agreement_ratio"` // share where the score agreed with the decision
+	Decisions map[string]int    `json:"decisions"` // "stage/action" -> count, undo excluded
+	Embedded  int               `json:"embedded"`
+	Scored    int               `json:"scored"`
+	Meta      map[string]string `json:"meta"` // reported by the worker
+	// LiveAUC is how well the scores ranked the user's recent slideshow decisions (1 = every
+	// deleted movie scored above every kept one, 0.5 = chance); 0 until enough decisions
+	LiveAUC          float64 `json:"live_auc"`
+	LiveAUCDecisions int     `json:"live_auc_decisions"`
 }
 
 // ValidStatus checks if a status value is valid

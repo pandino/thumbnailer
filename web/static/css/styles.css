@@ -365,12 +365,7 @@ section h2 {
     border-radius: var(--border-radius);
     overflow: hidden;
     box-shadow: var(--box-shadow);
-    transition: transform 0.3s ease;
     position: relative;
-}
-
-.thumbnail-item:hover {
-    transform: scale(1.03);
 }
 
 .thumbnail-item img {
@@ -391,11 +386,6 @@ section h2 {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.thumbnail-item a {
-    color: inherit;
-    text-decoration: none;
 }
 
 .thumbnail-meta {

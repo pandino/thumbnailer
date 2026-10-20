@@ -144,7 +144,7 @@ The application provides two main pages:
 - **Thumbnail Lists**: Browse thumbnails by status (unviewed, viewed, deleted, archived, errors)
 - **Real-time Updates**: Dynamic loading of thumbnail data via JavaScript
 - **Slideshow Launcher**: Continue the current session, or start a new one in random order or ordered by the preference model's scores (`/slideshow?new=true&order=likely-delete|uncertain|likely-keep`)
-- **Preference Model**: Decision counts, scored movies, model quality and agreement with your recent decisions
+- **Preference Model**: Decision counts, scored movies, model quality (cross-validated AUC) and live AUC on your recent decisions
 
 ### Slideshow Page (/slideshow)
 - Displays thumbnails in a fullscreen slideshow view
@@ -186,7 +186,7 @@ Preference model worker (see below):
 - `GET /api/v1/ml/embeddings?model=<key>` / `PUT /api/v1/ml/embeddings` - Read or store embeddings: `{"model", "embeddings": [{"id", "vector"}]}`
 - `GET /api/v1/ml/decisions` - The decision log: `{"id", "thumbnail_id", "movie_filename", "stage", "action", "source", "p_delete_at_decision", "created_at"}`
 - `PUT /api/v1/ml/scores` - Replace all scores: `{"scores": [{"id", "p_delete", "p_archive"}], "meta": {...}}`
-- `GET /api/v1/ml/status` - Decision counts, embedding/score coverage, model status and agreement
+- `GET /api/v1/ml/status` - Decision counts, embedding/score coverage, model status and live AUC (how well the scores shown at decision time ranked your last 300 slideshow decisions)
 
 ## Preference Model
 

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -304,33 +305,64 @@ func TestBackfillDecisions(t *testing.T) {
 	}
 }
 
-func TestMLStatusAgreement(t *testing.T) {
+func TestMLStatus(t *testing.T) {
 	db := newTestDB(t)
 	a := addTestThumbnail(t, db, "a.mp4", models.StatusSuccess, 0)
 	b := addTestThumbnail(t, db, "b.mp4", models.StatusSuccess, 0)
-	c := addTestThumbnail(t, db, "c.mp4", models.StatusSuccess, 0)
 	addTestThumbnail(t, db, "unscored.mp4", models.StatusSuccess, 0)
-	db.ReplaceScores([]models.Score{
-		{ThumbnailID: a.ID, PDelete: 0.9}, // deleted: agrees
-		{ThumbnailID: b.ID, PDelete: 0.2}, // passed: agrees
-		{ThumbnailID: c.ID, PDelete: 0.3}, // deleted: disagrees
-	}, map[string]string{"genre_auc": "0.81"})
+	db.ReplaceScores([]models.Score{{ThumbnailID: a.ID, PDelete: 0.9}, {ThumbnailID: b.ID, PDelete: 0.2}},
+		map[string]string{"genre_auc": "0.81"})
 	db.MarkForDeletionByID(a.ID)
 	db.MarkAsViewedByID(b.ID)
-	db.MarkForDeletionByID(c.ID)
 	db.PutEmbeddings("m", []models.Embedding{{ThumbnailID: a.ID, Vector: []float32{1}}})
 
 	status, err := db.GetMLStatus()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.Decisions["slideshow/delete"] != 2 || status.Decisions["slideshow/pass"] != 1 {
+	if status.Decisions["slideshow/delete"] != 1 || status.Decisions["slideshow/pass"] != 1 {
 		t.Errorf("decision counts = %v", status.Decisions)
 	}
-	if status.Scored != 3 || status.Embedded != 1 || status.Meta["genre_auc"] != "0.81" {
+	if status.Scored != 2 || status.Embedded != 1 || status.Meta["genre_auc"] != "0.81" {
 		t.Errorf("status = %+v", status)
 	}
-	if status.AgreementN != 3 || status.AgreementRatio < 0.66 || status.AgreementRatio > 0.67 {
-		t.Errorf("agreement = %d, %v; want 3, 2/3", status.AgreementN, status.AgreementRatio)
+	// Too few scored decisions for a live AUC
+	if status.LiveAUCDecisions != 0 {
+		t.Errorf("live AUC reported on %d decisions; want none yet", status.LiveAUCDecisions)
+	}
+}
+
+func TestMLStatusLiveAUC(t *testing.T) {
+	db := newTestDB(t)
+	// Deleted movies scored 0.5..0.9, kept ones 0.1..0.5: only the 0.5 pair ties, so
+	// AUC = (25 pairs - 0.5) / 25 = 0.98
+	var scores []models.Score
+	var deleted, kept []int64
+	for i := 0; i < 5; i++ {
+		d := addTestThumbnail(t, db, fmt.Sprintf("d%d.mp4", i), models.StatusSuccess, 0)
+		k := addTestThumbnail(t, db, fmt.Sprintf("k%d.mp4", i), models.StatusSuccess, 0)
+		scores = append(scores,
+			models.Score{ThumbnailID: d.ID, PDelete: 0.5 + 0.1*float64(i)},
+			models.Score{ThumbnailID: k.ID, PDelete: 0.1 + 0.1*float64(i)})
+		deleted, kept = append(deleted, d.ID), append(kept, k.ID)
+	}
+	// A low-scored delete that was undone must not count
+	undone := addTestThumbnail(t, db, "undone.mp4", models.StatusSuccess, 0)
+	scores = append(scores, models.Score{ThumbnailID: undone.ID, PDelete: 0.01})
+	db.ReplaceScores(scores, nil)
+
+	for i := range deleted {
+		db.MarkForDeletionByID(deleted[i])
+		db.MarkAsViewedByID(kept[i])
+	}
+	db.MarkForDeletionByID(undone.ID)
+	db.RestoreFromDeletionByID(undone.ID)
+
+	status, err := db.GetMLStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LiveAUCDecisions != 10 || status.LiveAUC < 0.979 || status.LiveAUC > 0.981 {
+		t.Errorf("live AUC = %v on %d decisions; want 0.98 on 10", status.LiveAUC, status.LiveAUCDecisions)
 	}
 }

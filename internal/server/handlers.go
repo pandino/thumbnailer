@@ -239,7 +239,6 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 		SessionDeletedSizeFormatted string
 		ML                          *models.MLStatus
 		MLArchived                  int
-		AgreementPercent            int
 	}{
 		Stats:                       stats,
 		IsScanning:                  s.scanner.IsScanning(),
@@ -256,7 +255,6 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 	if mlStatus != nil {
 		data.MLArchived = mlStatus.Decisions[models.StageSlideshow+"/"+models.ActionArchive] +
 			mlStatus.Decisions[models.StagePlayer+"/"+models.ActionArchive]
-		data.AgreementPercent = int(math.Round(mlStatus.AgreementRatio * 100))
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {

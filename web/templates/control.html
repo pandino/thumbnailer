@@ -119,11 +119,11 @@
                         <span class="stat-size">cross-validated, 1.0 = perfect</span>
                     </div>
                     {{end}}
-                    {{if gt .AgreementN 0}}
+                    {{if gt .LiveAUCDecisions 0}}
                     <div class="stat-box success">
-                        <span class="stat-value">{{$.AgreementPercent}}%</span>
-                        <span class="stat-label">Agreement</span>
-                        <span class="stat-size">on your last {{.AgreementN}} decisions</span>
+                        <span class="stat-value">{{printf "%.2f" .LiveAUC}}</span>
+                        <span class="stat-label">Live AUC</span>
+                        <span class="stat-size">on your last {{.LiveAUCDecisions}} scored decisions</span>
                     </div>
                     {{end}}
                 </div>

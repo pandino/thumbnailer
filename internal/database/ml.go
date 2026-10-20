@@ -78,7 +78,7 @@ func initMLSchema(db *sql.DB) error {
 }
 
 // recordDecision appends a decision for a live thumbnail, copying its current p_delete so the
-// model's agreement with the user can be measured later
+// model's ranking of the user's decisions can be measured later (live AUC)
 func recordDecision(tx *sql.Tx, id int64, stage, action, source string) error {
 	_, err := tx.Exec(`
 		INSERT INTO decisions (thumbnail_id, movie_filename, stage, action, source, p_delete_at_decision)
@@ -425,8 +425,12 @@ func (d *DB) GetScore(id int64) (*models.Score, error) {
 	return s, nil
 }
 
-// agreementWindow is how many recent scored slideshow decisions the agreement ratio covers
-const agreementWindow = 100
+// liveAUCWindow is how many recent scored slideshow decisions the live AUC covers, and
+// liveAUCMinPerClass how many deletes and keeps it needs before it is reported
+const (
+	liveAUCWindow      = 300
+	liveAUCMinPerClass = 5
+)
 
 // GetMLStatus summarizes decisions, embeddings, scores and the worker's model status
 func (d *DB) GetMLStatus() (*models.MLStatus, error) {
@@ -481,26 +485,69 @@ func (d *DB) GetMLStatus() (*models.MLStatus, error) {
 		return nil, err
 	}
 
-	var agreed sql.NullInt64
-	err = d.db.QueryRow(`
-		SELECT COUNT(*), SUM(CASE WHEN (p_delete_at_decision >= 0.5) = (action = ?) THEN 1 ELSE 0 END)
-		FROM (
-			SELECT p_delete_at_decision, action
-			FROM decisions
-			WHERE stage = ? AND action IN (?, ?, ?) AND p_delete_at_decision IS NOT NULL
-			ORDER BY id DESC
-			LIMIT ?
-		)`,
-		models.ActionDelete, models.StageSlideshow,
-		models.ActionDelete, models.ActionPass, models.ActionArchive, agreementWindow,
-	).Scan(&status.AgreementN, &agreed)
-	if err != nil {
+	if err := d.liveAUC(status); err != nil {
 		return nil, err
 	}
-	if status.AgreementN > 0 {
-		status.AgreementRatio = float64(agreed.Int64) / float64(status.AgreementN)
-	}
 	return status, nil
+}
+
+// liveAUC measures how well the scores shown at decision time ranked the user's recent
+// slideshow decisions: the probability that a deleted movie had a higher delete score than a
+// kept (passed or archived) one. Being rank-based, it is unaffected by how the scores were
+// calibrated. Decisions that were later undone are left out.
+func (d *DB) liveAUC(status *models.MLStatus) error {
+	rows, err := d.db.Query(`
+		SELECT p_delete_at_decision, action
+		FROM decisions dec
+		WHERE stage = ? AND action IN (?, ?, ?) AND p_delete_at_decision IS NOT NULL
+		AND NOT EXISTS (
+			SELECT 1 FROM decisions u
+			WHERE u.thumbnail_id = dec.thumbnail_id AND u.stage = dec.stage AND u.action = ? AND u.id > dec.id
+		)
+		ORDER BY id DESC
+		LIMIT ?`,
+		models.StageSlideshow, models.ActionDelete, models.ActionPass, models.ActionArchive,
+		models.ActionUndo, liveAUCWindow,
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var deleted, kept []float64
+	for rows.Next() {
+		var p float64
+		var action string
+		if err := rows.Scan(&p, &action); err != nil {
+			return err
+		}
+		if action == models.ActionDelete {
+			deleted = append(deleted, p)
+		} else {
+			kept = append(kept, p)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(deleted) < liveAUCMinPerClass || len(kept) < liveAUCMinPerClass {
+		return nil
+	}
+
+	var wins float64
+	for _, pd := range deleted {
+		for _, pk := range kept {
+			switch {
+			case pd > pk:
+				wins++
+			case pd == pk:
+				wins += 0.5
+			}
+		}
+	}
+	status.LiveAUC = wins / float64(len(deleted)*len(kept))
+	status.LiveAUCDecisions = len(deleted) + len(kept)
+	return nil
 }
 
 // encodeVector stores a float32 vector as little-endian bytes
