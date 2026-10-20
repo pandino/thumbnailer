@@ -5,8 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# Adjust: venv created by install.sh, thumbnailer reachable on the LAN
-ExecStart=%h/.local/share/thumbnailer-taste/venv/bin/python %h/.local/share/thumbnailer-taste/taste.py --server http://192.168.1.35:8080 --max-minutes 20
+# The RX 6700 XT (gfx1031) isn't an official ROCm target; torch works when it is treated as gfx1030
+Environment=HSA_OVERRIDE_GFX_VERSION=10.3.0
+# Adjust: venv created by install.sh (ROCm build of torch), thumbnailer reachable on the LAN
+ExecStart=%h/.local/share/thumbnailer-taste/venv-rocm/bin/python %h/.local/share/thumbnailer-taste/taste.py --server http://192.168.1.35:8080 --device cuda --max-minutes 20
 # Stay out of the way of interactive use
 Nice=15
 IOSchedulingClass=idle

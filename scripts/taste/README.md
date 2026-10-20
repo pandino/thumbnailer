@@ -29,16 +29,19 @@ The **delete model** predicts the slideshow decision from the grid alone. The **
 ## Install
 
 ```bash
-./install.sh   # venv in ~/.local/share/thumbnailer-taste, systemd user timer (boot + every 15 min)
+./install.sh   # ROCm venv in ~/.local/share/thumbnailer-taste, systemd user timer (boot + every 15 min)
 ```
+
+The timer embeds on the GPU (see [GPU](#gpu-amd-rocm)); `install.sh` refuses to install it if torch can't use the GPU.
 
 The service points at `http://192.168.1.35:8080`, the container's LAN address. The public hostname is behind SSO. Edit `systemd/thumbnailer-taste.service` if that changes, then re-run `install.sh`.
 
 ## Run by hand
 
 ```bash
-PY=~/.local/share/thumbnailer-taste/venv/bin/python
-$PY taste.py --server http://192.168.1.35:8080                 # embed (20 min max), train, score
+export HSA_OVERRIDE_GFX_VERSION=10.3.0
+PY=~/.local/share/thumbnailer-taste/venv-rocm/bin/python
+$PY taste.py --server http://192.168.1.35:8080 --device cuda   # embed (20 min max), train, score
 $PY taste.py --server http://192.168.1.35:8080 --no-embed      # retrain and rescore only
 $PY taste.py --server http://192.168.1.35:8080 --dry-run -v    # don't upload scores
 journalctl --user -u thumbnailer-taste -f                      # timer runs
@@ -55,19 +58,11 @@ journalctl --user -u thumbnailer-taste -f                      # timer runs
 
 ### GPU (AMD, ROCm)
 
-The timer uses the CPU: after the first pass a run only embeds the few new grids, and the CPU keeps it independent of the GPU and the llama router's VRAM. For the first pass, or to try bigger models, the RX 6700 XT is about 8x faster (0.15 s per grid). It needs a ROCm build of torch in its own venv (about 15 GB, as it bundles ROCm) and an override, because gfx1031 isn't an official ROCm target:
+The RX 6700 XT embeds a grid in about 0.15 s, against 1.3 s on the CPU. It needs a ROCm build of torch, which `install.sh` puts in its own venv (about 15 GB, as it bundles ROCm), and an override, because gfx1031 isn't an official ROCm target: `HSA_OVERRIDE_GFX_VERSION=10.3.0`, set in the service. Without it torch crashes on the first GPU call. Ignore the `(null): No such file or directory` line ROCm prints.
 
-```bash
-uv venv --python 3.12 ~/.local/share/thumbnailer-taste/venv-rocm
-uv pip install --python ~/.local/share/thumbnailer-taste/venv-rocm/bin/python \
-  --index-url https://download.pytorch.org/whl/rocm7.2 torch torchvision
-uv pip install --python ~/.local/share/thumbnailer-taste/venv-rocm/bin/python -r requirements.txt
+GPU and CPU embeddings were checked to be identical (cosine 1.00000), so `--device cpu` (the script's default, with a CPU-only torch) fills the same embedding set if the GPU is ever unusable.
 
-HSA_OVERRIDE_GFX_VERSION=10.3.0 ~/.local/share/thumbnailer-taste/venv-rocm/bin/python \
-  taste.py --server http://192.168.1.35:8080 --device cuda --max-minutes 60
-```
-
-Without the override torch crashes on the first GPU call. GPU and CPU embeddings were checked to be identical (cosine 1.00000), so both can fill the same embedding set. The base model needs about 1.6 GiB of VRAM, which fits next to a loaded router preset; `ViT-SO400M-16-SigLIP2-256` needs 4.6 GiB, so stop the router first. Ignore the `(null): No such file or directory` line ROCm prints.
+VRAM: the base model needs about 1.6 GiB, on top of whatever the llama router has loaded. The router's presets use up to about 11 GiB of the 12, so with the biggest ones loaded a run can fail for lack of memory, or push part of the router's model out of VRAM until the run ends; the next timer run simply retries. `ViT-SO400M-16-SigLIP2-256` needs 4.6 GiB, so stop the router before trying it.
 
 Embeddings are stored under a key made of model, weights and frame count (e.g. `ViT-B-16-SigLIP2-256/webli/f16`). Changing any of them starts a fresh embedding pass, and old embeddings stay on the server unused.
 
