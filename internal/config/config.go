@@ -45,6 +45,11 @@ type Config struct {
 
 	// Import settings
 	ImportExisting bool
+
+	// BackfillLabels reconstructs preference-model training data after each scan: decisions
+	// saved in ${ThumbnailsDir}/bootstrap, viewed thumbnails as passed, and grids for the
+	// movies already in ArchiveDir. Idempotent; meant to be enabled once.
+	BackfillLabels bool
 }
 
 // New creates a new Config with values from environment variables or defaults
@@ -80,6 +85,7 @@ func New() *Config {
 
 		// Import settings
 		ImportExisting: getEnvAsBool("IMPORT_EXISTING", false),
+		BackfillLabels: getEnvAsBool("BACKFILL_LABELS", false),
 	}
 
 	// Derive DB path - check DATABASE_PATH first, then default

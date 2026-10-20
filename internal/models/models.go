@@ -109,6 +109,109 @@ const (
 	SourceImported  = "imported"
 )
 
+// Decision stages: where the user made the choice
+const (
+	StageSlideshow = "slideshow" // judged from the thumbnail grid
+	StagePlayer    = "player"    // judged after watching (MPV scripts)
+)
+
+// Decision actions. ActionUndo cancels the previous decision of the same stage.
+const (
+	ActionDelete  = "delete"
+	ActionArchive = "archive"
+	ActionPass    = "pass"
+	ActionUndo    = "undo"
+)
+
+// Decision sources: recorded as it happened, or reconstructed afterwards
+const (
+	DecisionLive     = "live"
+	DecisionBackfill = "backfill"
+)
+
+// Decision is one entry of the append-only decision log used to train the preference model
+type Decision struct {
+	ID                int64     `json:"id"`
+	ThumbnailID       int64     `json:"thumbnail_id"`
+	MovieFilename     string    `json:"movie_filename"`
+	Stage             string    `json:"stage"`
+	Action            string    `json:"action"`
+	Source            string    `json:"source"`
+	PDeleteAtDecision *float64  `json:"p_delete_at_decision,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+// GridGeometry describes the tile layout of a thumbnail grid, so single frames can be cropped
+// out of it. Cols == 0 means the layout is unknown (e.g. an imported grid of another size).
+type GridGeometry struct {
+	Cols       int `json:"cols"`
+	Rows       int `json:"rows"`
+	TileWidth  int `json:"tile_width"`
+	TileHeight int `json:"tile_height"`
+	Padding    int `json:"padding"` // used both between tiles and as the outer margin
+}
+
+// Known reports whether the layout is known
+func (g GridGeometry) Known() bool {
+	return g.Cols > 0 && g.Rows > 0
+}
+
+// ImageSize returns the pixel size of a grid with this layout
+func (g GridGeometry) ImageSize() (int, int) {
+	return g.Cols*g.TileWidth + (g.Cols+1)*g.Padding, g.Rows*g.TileHeight + (g.Rows+1)*g.Padding
+}
+
+// MLItem is a grid the preference model can learn from or score: a live thumbnail or a
+// decided movie whose grid was kept after its file was deleted or archived
+type MLItem struct {
+	ID            int64        `json:"id"`
+	MovieFilename string       `json:"movie_filename"`
+	GridURL       string       `json:"grid_url"`
+	Live          bool         `json:"live"`
+	Geometry      GridGeometry `json:"geometry"`
+}
+
+// Embedding is an image embedding of one grid computed by a given model
+type Embedding struct {
+	ThumbnailID int64     `json:"id"`
+	Vector      []float32 `json:"vector"`
+}
+
+// Score holds the preference model's predictions for one thumbnail
+type Score struct {
+	ThumbnailID int64    `json:"id"`
+	PDelete     float64  `json:"p_delete"`
+	PArchive    *float64 `json:"p_archive,omitempty"`
+}
+
+// Slideshow orders
+const (
+	OrderRandom       = "random"
+	OrderLikelyDelete = "likely-delete"
+	OrderUncertain    = "uncertain"
+	OrderLikelyKeep   = "likely-keep"
+)
+
+// ValidOrder checks if a slideshow order value is valid
+func ValidOrder(order string) bool {
+	switch order {
+	case OrderRandom, OrderLikelyDelete, OrderUncertain, OrderLikelyKeep:
+		return true
+	default:
+		return false
+	}
+}
+
+// MLStatus summarizes the preference model for the control page
+type MLStatus struct {
+	Decisions      map[string]int    `json:"decisions"` // "stage/action" -> count, undo excluded
+	Embedded       int               `json:"embedded"`
+	Scored         int               `json:"scored"`
+	Meta           map[string]string `json:"meta"`            // reported by the worker
+	AgreementN     int               `json:"agreement_n"`     // recent slideshow decisions that had a score
+	AgreementRatio float64           `json:"agreement_ratio"` // share where the score agreed with the decision
+}
+
 // ValidStatus checks if a status value is valid
 func ValidStatus(status string) bool {
 	switch status {

@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the thumbnailer preference model worker while this machine is on
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=15min
+
+[Install]
+WantedBy=timers.target

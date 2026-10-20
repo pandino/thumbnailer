@@ -20,6 +20,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Grid tile layout. The preference model crops single frames out of the grid using these values
+// (stored per thumbnail as models.GridGeometry), so the ffmpeg filter must be built from them.
+const (
+	TileWidth   = 320
+	TileHeight  = 180
+	TilePadding = 4 // between tiles and as the outer margin
+)
+
 // Thumbnailer creates thumbnail grids from movie files using ffmpeg
 type Thumbnailer struct {
 	cfg     *config.Config
@@ -129,10 +137,46 @@ func (t *Thumbnailer) CreateThumbnail(ctx context.Context, moviePath string, db 
 	if db != nil {
 		if err := db.UpsertThumbnail(thumbnail); err != nil {
 			t.log.WithError(err).WithField("movie", moviePath).Error("Failed to save success status")
+		} else if err := db.SetGeometry(thumbnail.ID, t.Geometry()); err != nil {
+			t.log.WithError(err).WithField("movie", moviePath).Error("Failed to save grid geometry")
 		}
 	}
 
 	return thumbnail, nil
+}
+
+// Geometry returns the tile layout of the grids this thumbnailer generates
+func (t *Thumbnailer) Geometry() models.GridGeometry {
+	return models.GridGeometry{
+		Cols:       t.cfg.GridCols,
+		Rows:       t.cfg.GridRows,
+		TileWidth:  TileWidth,
+		TileHeight: TileHeight,
+		Padding:    TilePadding,
+	}
+}
+
+// GenerateGrid writes a thumbnail grid for a movie to outputPath without touching the database,
+// returning the movie's metadata. Used for movies that are only recorded as decided.
+func (t *Thumbnailer) GenerateGrid(ctx context.Context, moviePath, outputPath string) (*VideoMetadata, error) {
+	metadata, err := t.GetVideoMetadata(ctx, moviePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get video metadata: %w", err)
+	}
+
+	interval, err := t.calculateKeyframeInterval(ctx, moviePath, metadata.Duration)
+	if err != nil {
+		t.log.WithError(err).WithField("movie", moviePath).Warn("Failed to calculate keyframe interval, using default")
+		interval = 10
+	}
+
+	if err := t.generateThumbnailGrid(ctx, moviePath, outputPath, interval); err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(outputPath); err != nil {
+		return nil, fmt.Errorf("thumbnail file was not created: %s", outputPath)
+	}
+	return metadata, nil
 }
 
 // VideoMetadata stores information about a video file
@@ -298,8 +342,8 @@ func (t *Thumbnailer) generateThumbnailGrid(ctx context.Context, moviePath, outp
 		"-ss", "30", // Skip first 30 seconds
 		"-skip_frame", "nokey",
 		"-i", moviePath,
-		"-vf", fmt.Sprintf("select='eq(pict_type,I)',select='not(mod(n,%d))',scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2,tile=%dx%d:padding=4:margin=4",
-			interval, t.cfg.GridCols, t.cfg.GridRows),
+		"-vf", fmt.Sprintf("select='eq(pict_type,I)',select='not(mod(n,%d))',scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2,tile=%dx%d:padding=%d:margin=%d",
+			interval, TileWidth, TileHeight, TileWidth, TileHeight, t.cfg.GridCols, t.cfg.GridRows, TilePadding, TilePadding),
 		"-frames:v", "1",
 		"-q:v", "3",
 		"-update", "1",

@@ -1,0 +1,8 @@
+# Install torch from the CPU index first to avoid several GB of CUDA libraries:
+#   uv pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+torch
+torchvision
+open_clip_torch>=3.0
+scikit-learn
+pillow
+numpy

@@ -13,7 +13,7 @@
             <div class="slideshow-info">
                 <span class="movie-title">{{.Thumbnail.MovieFilename}}</span>
                 <span class="slideshow-counter">
-                    Slide {{.Current}}/{{.Total}}{{if .Tag}} · Tag: {{.Tag}}{{end}}{{if gt .SessionDeletedSize 0}} · Deleted {{.SessionDeletedSizeFormatted}}{{end}}
+                    Slide {{.Current}}/{{.Total}}{{if .Tag}} · Tag: {{.Tag}}{{end}}{{if .OrderLabel}} · {{.OrderLabel}}{{end}}{{if gt .SessionDeletedSize 0}} · Deleted {{.SessionDeletedSizeFormatted}}{{end}}
                 </span>
                 {{if .PendingDelete}}
                 <span class="deletion-status">Marked for deletion — press U to undo</span>
@@ -29,6 +29,10 @@
         <div class="thumbnail-display">
             {{if eq .Thumbnail.Source "imported"}}
             <div class="source-badge imported">Imported</div>
+            {{end}}
+            {{with .Score}}
+            <div class="score-badge {{if .Delete}}likely-delete{{else}}likely-keep{{end}}"
+                title="Preference model prediction">{{if .Delete}}Delete{{else}}Keep{{end}} {{.Percent}}%</div>
             {{end}}
             <img src="/thumbnails/{{.Thumbnail.ThumbnailPath}}" alt="{{.Thumbnail.MovieFilename}}" 
                 class="thumbnail-image {{.Thumbnail.Source}}">

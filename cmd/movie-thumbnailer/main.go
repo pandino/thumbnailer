@@ -28,6 +28,7 @@ import (
 func main() {
 	// Define all command-line flags
 	importFlag := flag.Bool("import-existing", false, "Import existing thumbnails without recreating them")
+	backfillFlag := flag.Bool("backfill-labels", false, "Reconstruct preference-model training data after each scan")
 	versionFlag := flag.Bool("version", false, "Print version information and exit")
 
 	// Parse all flags once
@@ -53,6 +54,9 @@ func main() {
 	if *importFlag {
 		cfg.ImportExisting = true
 		log.Info("Import existing thumbnails mode enabled")
+	}
+	if *backfillFlag {
+		cfg.BackfillLabels = true
 	}
 
 	if cfg.Debug {

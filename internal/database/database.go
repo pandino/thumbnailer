@@ -97,7 +97,7 @@ func initSchema(db *sql.DB) error {
 		return err
 	}
 
-	return nil
+	return initMLSchema(db)
 }
 
 // Add creates a new thumbnail record in the database
@@ -190,37 +190,69 @@ func (d *DB) UpdateStatus(moviePath string, status string, errorMsg string) erro
 	return err
 }
 
-// MarkAsViewedByID marks a thumbnail as viewed by ID
+// MarkAsViewedByID marks a thumbnail as viewed by ID, recording a slideshow "pass" decision
 func (d *DB) MarkAsViewedByID(id int64) error {
-	_, err := d.db.Exec(`
-		UPDATE thumbnails 
+	return d.updateWithDecision(id, `
+		UPDATE thumbnails
 		SET viewed = 1
 		WHERE id = ?`,
-		id,
+		models.StageSlideshow, models.ActionPass,
 	)
-	return err
 }
 
-// MarkForDeletionByID marks a thumbnail for deletion by ID without actually deleting it
+// MarkForDeletionByID marks a thumbnail for deletion from the slideshow without actually deleting it
 func (d *DB) MarkForDeletionByID(id int64) error {
-	_, err := d.db.Exec(`
-		UPDATE thumbnails 
+	return d.MarkForDeletion(id, models.StageSlideshow)
+}
+
+// MarkForDeletion marks a thumbnail for deletion, recording the decision for the given stage
+func (d *DB) MarkForDeletion(id int64, stage string) error {
+	return d.updateWithDecision(id, `
+		UPDATE thumbnails
 		SET status = 'deleted'
 		WHERE id = ?`,
-		id,
+		stage, models.ActionDelete,
 	)
-	return err
 }
 
-// MarkForArchivalByID marks a thumbnail for archival by ID
+// MarkForArchivalByID marks a thumbnail for archival from the slideshow
 func (d *DB) MarkForArchivalByID(id int64) error {
-	_, err := d.db.Exec(`
-		UPDATE thumbnails 
+	return d.MarkForArchival(id, models.StageSlideshow)
+}
+
+// MarkForArchival marks a thumbnail for archival, recording the decision for the given stage
+func (d *DB) MarkForArchival(id int64, stage string) error {
+	return d.updateWithDecision(id, `
+		UPDATE thumbnails
 		SET status = 'archived'
 		WHERE id = ?`,
-		id,
+		stage, models.ActionArchive,
 	)
-	return err
+}
+
+// updateWithDecision runs a single-row update and, if it changed a row, appends the matching
+// decision to the decision log in the same transaction
+func (d *DB) updateWithDecision(id int64, update, stage, action string) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(update, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected > 0 {
+		if err := recordDecision(tx, id, stage, action, models.DecisionLive); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // GetByID retrieves a thumbnail by its ID
@@ -316,18 +348,25 @@ func (d *DB) GetByThumbnailPath(thumbnailPath string) (*models.Thumbnail, error)
 
 // GetRandomUnviewedThumbnail gets a random unviewed thumbnail
 func (d *DB) GetRandomUnviewedThumbnail() (*models.Thumbnail, error) {
-	return d.randomUnviewed("", nil)
+	return d.randomUnviewed("", models.OrderRandom, nil)
 }
 
 // GetRandomUnviewedThumbnailExcluding gets a random unviewed thumbnail excluding specific IDs
 func (d *DB) GetRandomUnviewedThumbnailExcluding(excludeIDs ...int64) (*models.Thumbnail, error) {
-	return d.randomUnviewed("", excludeIDs)
+	return d.randomUnviewed("", models.OrderRandom, excludeIDs)
 }
 
 // GetRandomUnviewedThumbnailWithTag gets a random unviewed thumbnail carrying the given tag,
 // excluding specific IDs. An empty tag disables the tag filter.
 func (d *DB) GetRandomUnviewedThumbnailWithTag(tag string, excludeIDs ...int64) (*models.Thumbnail, error) {
-	return d.randomUnviewed(tag, excludeIDs)
+	return d.randomUnviewed(tag, models.OrderRandom, excludeIDs)
+}
+
+// GetUnviewedThumbnailOrdered picks the next unviewed thumbnail in the given slideshow order
+// (see models.Order*), honoring the tag filter and excluded IDs. Non-random orders rank by the
+// preference model's score and fall back to a random unscored thumbnail once scored ones run out.
+func (d *DB) GetUnviewedThumbnailOrdered(tag, order string, excludeIDs ...int64) (*models.Thumbnail, error) {
+	return d.randomUnviewed(tag, order, excludeIDs)
 }
 
 // GetUnviewedCountByTag returns the number of unviewed thumbnails carrying the given tag
@@ -343,8 +382,9 @@ func (d *DB) GetUnviewedCountByTag(tag string) (int, error) {
 	return count, err
 }
 
-// randomUnviewed picks a random unviewed thumbnail, optionally filtered by tag and excluding IDs
-func (d *DB) randomUnviewed(tag string, excludeIDs []int64) (*models.Thumbnail, error) {
+// randomUnviewed picks an unviewed thumbnail, optionally filtered by tag and excluding IDs.
+// The order is random unless a score-based order is requested.
+func (d *DB) randomUnviewed(tag, order string, excludeIDs []int64) (*models.Thumbnail, error) {
 	// Build the filter condition
 	condition := ""
 	args := []interface{}{}
@@ -364,6 +404,15 @@ func (d *DB) randomUnviewed(tag string, excludeIDs []int64) (*models.Thumbnail, 
 			args = append(args, id)
 		}
 		condition += ")"
+	}
+
+	if rank := scoreRanking(order); rank != "" {
+		thumbnail, err := d.bestScoredUnviewed(condition, rank, args)
+		if thumbnail != nil || err != nil {
+			return thumbnail, err
+		}
+		// No scored thumbnail left: continue with a random unscored one
+		condition += " AND id NOT IN (SELECT thumbnail_id FROM scores)"
 	}
 
 	// First, count the total number of matching unviewed thumbnails
@@ -414,6 +463,46 @@ func (d *DB) randomUnviewed(tag string, excludeIDs []int64) (*models.Thumbnail, 
 		return nil, nil
 	}
 
+	return thumbnail, err
+}
+
+// scoreRanking returns the ORDER BY expression over scores.p_delete for a score-based slideshow
+// order, or "" for the random order
+func scoreRanking(order string) string {
+	switch order {
+	case models.OrderLikelyDelete:
+		return "s.p_delete DESC"
+	case models.OrderLikelyKeep:
+		return "s.p_delete ASC"
+	case models.OrderUncertain:
+		return "ABS(s.p_delete - 0.5) ASC"
+	default:
+		return ""
+	}
+}
+
+// bestScoredUnviewed returns the top-ranked scored unviewed thumbnail matching condition
+func (d *DB) bestScoredUnviewed(condition, rank string, args []interface{}) (*models.Thumbnail, error) {
+	thumbnail := &models.Thumbnail{}
+	err := d.db.QueryRow(`
+		SELECT
+			id, movie_path, movie_filename, thumbnail_path,
+			created_at, updated_at, status, viewed,
+			width, height, duration, file_size, error_message, source
+		FROM thumbnails
+		JOIN scores s ON s.thumbnail_id = thumbnails.id
+		WHERE status = 'success' AND viewed = 0`+condition+`
+		ORDER BY `+rank+`, id ASC
+		LIMIT 1`,
+		args...,
+	).Scan(
+		&thumbnail.ID, &thumbnail.MoviePath, &thumbnail.MovieFilename, &thumbnail.ThumbnailPath,
+		&thumbnail.CreatedAt, &thumbnail.UpdatedAt, &thumbnail.Status, &thumbnail.Viewed,
+		&thumbnail.Width, &thumbnail.Height, &thumbnail.Duration, &thumbnail.FileSize, &thumbnail.ErrorMessage, &thumbnail.Source,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 	return thumbnail, err
 }
 
@@ -731,15 +820,15 @@ func (d *DB) RestoreFromDeletion(moviePath string) error {
 	return err
 }
 
-// RestoreFromDeletionByID restores a thumbnail from deletion status back to success by ID
+// RestoreFromDeletionByID restores a thumbnail from deletion status back to success by ID,
+// recording an undo of the slideshow deletion
 func (d *DB) RestoreFromDeletionByID(id int64) error {
-	_, err := d.db.Exec(`
-        UPDATE thumbnails 
+	return d.updateWithDecision(id, `
+        UPDATE thumbnails
         SET status = 'success', viewed = 0
         WHERE id = ? AND status = 'deleted'`,
-		id,
+		models.StageSlideshow, models.ActionUndo,
 	)
-	return err
 }
 
 func (d *DB) GetStats() (*models.Stats, error) {

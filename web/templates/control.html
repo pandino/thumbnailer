@@ -67,6 +67,46 @@
                 </div>
             </section>
 
+            {{with .ML}}
+            <section class="model-panel">
+                <h2>Preference Model</h2>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <span class="stat-value">{{index .Decisions "slideshow/delete"}} / {{index .Decisions "slideshow/pass"}} / {{index .Decisions "slideshow/archive"}}</span>
+                        <span class="stat-label">Slideshow delete / pass / archive</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-value">{{index .Decisions "player/delete"}} / {{index .Decisions "player/archive"}}</span>
+                        <span class="stat-label">After watching delete / archive</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-value">{{.Embedded}} / {{.Scored}}</span>
+                        <span class="stat-label">Embedded / scored</span>
+                    </div>
+                    {{with index .Meta "genre_auc"}}
+                    <div class="stat-box">
+                        <span class="stat-value">{{.}}</span>
+                        <span class="stat-label">Delete model CV AUC</span>
+                    </div>
+                    {{end}}
+                    {{if gt .AgreementN 0}}
+                    <div class="stat-box">
+                        <span class="stat-value">{{$.AgreementPercent}}%</span>
+                        <span class="stat-label">Agreed on last {{.AgreementN}} decisions</span>
+                    </div>
+                    {{end}}
+                </div>
+                {{with index .Meta "trained_at"}}<p class="model-trained">Last trained {{.}}{{with index $.ML.Meta "model"}} · {{.}}{{end}}</p>{{end}}
+                {{if gt .Scored 0}}
+                <div class="slideshow-actions">
+                    <a href="/slideshow?new=true&order=likely-delete" class="start-slideshow">Likely delete first</a>
+                    <a href="/slideshow?new=true&order=uncertain" class="start-slideshow">Most uncertain first</a>
+                    <a href="/slideshow?new=true&order=likely-keep" class="start-slideshow">Likely keep first</a>
+                </div>
+                {{end}}
+            </section>
+            {{end}}
+
             {{if .Tags}}
             <section class="tags-panel">
                 <h2>Tags</h2>

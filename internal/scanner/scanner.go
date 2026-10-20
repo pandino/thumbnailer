@@ -179,30 +179,35 @@ func (s *Scanner) findMovieFiles(ctx context.Context) ([]string, error) {
 			default:
 			}
 
-			if entry.IsDir() {
+			if entry.IsDir() || !s.isMovieFile(entry.Name()) {
 				continue
 			}
 
-			ext := strings.ToLower(filepath.Ext(entry.Name()))
-			if ext == "" {
-				continue
-			}
-			ext = ext[1:]
-
-			for _, allowedExt := range s.cfg.FileExtensions {
-				if ext == strings.ToLower(allowedExt) {
-					basename := entry.Name()
-					if _, alreadySeen := seen[basename]; !alreadySeen {
-						seen[basename] = struct{}{}
-						movieFiles = append(movieFiles, filepath.Join(dir, basename))
-					}
-					break
-				}
+			basename := entry.Name()
+			if _, alreadySeen := seen[basename]; !alreadySeen {
+				seen[basename] = struct{}{}
+				movieFiles = append(movieFiles, filepath.Join(dir, basename))
 			}
 		}
 	}
 
 	return movieFiles, nil
+}
+
+// isMovieFile reports whether a filename has one of the configured movie extensions
+func (s *Scanner) isMovieFile(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	if ext == "" {
+		return false
+	}
+	ext = ext[1:]
+
+	for _, allowedExt := range s.cfg.FileExtensions {
+		if ext == strings.ToLower(allowedExt) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveMoviePaths returns every absolute path across all configured volumes where a
@@ -602,18 +607,6 @@ func (s *Scanner) processDeletedItems(ctx context.Context) error {
 			}
 		}
 
-		// Delete the thumbnail file if it exists
-		if thumbnail.ThumbnailPath != "" {
-			thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, thumbnail.ThumbnailPath)
-			if _, err := os.Stat(thumbnailPath); err == nil {
-				if err := os.Remove(thumbnailPath); err != nil {
-					s.log.WithError(err).WithField("thumbnail", thumbnailPath).Error("Failed to delete thumbnail file")
-				} else {
-					s.log.WithField("thumbnail", thumbnailPath).Info("Deleted thumbnail file")
-				}
-			}
-		}
-
 		// Delete the movie file from every volume where it exists
 		moviePaths := s.resolveMoviePaths(thumbnail.MoviePath)
 		deleteErr := false
@@ -629,6 +622,9 @@ func (s *Scanner) processDeletedItems(ctx context.Context) error {
 			// Don't remove from database on error so we can retry later
 			continue
 		}
+
+		// Keep the grid as training data for the preference model
+		s.keepDecidedGrid(thumbnail)
 
 		// Track metrics for successfully deleted movie
 		deletedCount++
@@ -681,6 +677,7 @@ func (s *Scanner) processArchivedItems(ctx context.Context) error {
 
 		if len(allPaths) == 0 {
 			s.log.WithField("movie", thumbnail.MoviePath).Warn("Movie file does not exist in any volume, removing from database")
+			s.keepDecidedGrid(thumbnail)
 			if err := s.db.DeleteThumbnail(thumbnail.MoviePath); err != nil {
 				s.log.WithError(err).WithField("movie", thumbnail.MoviePath).Error("Failed to delete missing movie from database")
 			}
@@ -732,17 +729,8 @@ func (s *Scanner) processArchivedItems(ctx context.Context) error {
 			continue
 		}
 
-		// Delete the thumbnail file if it exists
-		if thumbnail.ThumbnailPath != "" {
-			thumbnailPath := filepath.Join(s.cfg.ThumbnailsDir, thumbnail.ThumbnailPath)
-			if _, err := os.Stat(thumbnailPath); err == nil {
-				if err := os.Remove(thumbnailPath); err != nil {
-					s.log.WithError(err).WithField("thumbnail", thumbnailPath).Error("Failed to delete thumbnail file")
-				} else {
-					s.log.WithField("thumbnail", thumbnailPath).Info("Deleted thumbnail file")
-				}
-			}
-		}
+		// Keep the grid as training data for the preference model
+		s.keepDecidedGrid(thumbnail)
 
 		// Track metrics for successfully archived movie
 		archivedCount++
@@ -762,6 +750,43 @@ func (s *Scanner) processArchivedItems(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// DecidedDirName is the subdirectory of the thumbnails directory holding the grids of movies
+// that were deleted or archived. They are the preference model's training history; the
+// orphaned-thumbnail cleanup never descends into subdirectories.
+const DecidedDirName = "decided"
+
+// keepDecidedGrid moves a decided thumbnail's grid into the decided directory and snapshots the
+// movie, before the thumbnail row is removed. Failures are logged: losing one training example
+// must not block the deletion or archival queue.
+func (s *Scanner) keepDecidedGrid(thumbnail *models.Thumbnail) {
+	gridFile := ""
+	if thumbnail.ThumbnailPath != "" {
+		src := filepath.Join(s.cfg.ThumbnailsDir, thumbnail.ThumbnailPath)
+		if _, err := os.Stat(src); err == nil {
+			name := fmt.Sprintf("%d.jpg", thumbnail.ID)
+			dst := filepath.Join(s.cfg.ThumbnailsDir, DecidedDirName, name)
+			if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+				s.log.WithError(err).WithField("thumbnail", src).Error("Failed to create decided grid directory")
+			} else if err := os.Rename(src, dst); err != nil {
+				s.log.WithError(err).WithField("thumbnail", src).Error("Failed to keep decided grid")
+			} else {
+				gridFile = name
+				s.log.WithFields(logrus.Fields{"thumbnail": src, "decided": dst}).Debug("Kept decided grid")
+			}
+			if gridFile == "" {
+				// Fall back to the old behaviour so the orphan cleanup doesn't have to
+				if err := os.Remove(src); err != nil {
+					s.log.WithError(err).WithField("thumbnail", src).Error("Failed to delete thumbnail file")
+				}
+			}
+		}
+	}
+
+	if err := s.db.SaveDecidedMovie(thumbnail, gridFile, time.Now()); err != nil {
+		s.log.WithError(err).WithField("movie", thumbnail.MoviePath).Error("Failed to record decided movie")
+	}
 }
 
 // copyFile copies a file from source to destination

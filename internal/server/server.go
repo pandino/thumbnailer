@@ -128,6 +128,14 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/api/v1/video/tags", s.handleAPIUpdateVideoTags).Methods("POST")
 	s.router.HandleFunc("/api/v1/thumbnails", s.handleAPIListThumbnails).Methods("GET")
 
+	// API v1 routes for the preference-model worker
+	s.router.HandleFunc("/api/v1/ml/items", s.handleMLItems).Methods("GET")
+	s.router.HandleFunc("/api/v1/ml/embeddings", s.handleListEmbeddings).Methods("GET")
+	s.router.HandleFunc("/api/v1/ml/embeddings", s.handlePutEmbeddings).Methods("PUT")
+	s.router.HandleFunc("/api/v1/ml/decisions", s.handleListDecisions).Methods("GET")
+	s.router.HandleFunc("/api/v1/ml/scores", s.handlePutScores).Methods("PUT")
+	s.router.HandleFunc("/api/v1/ml/status", s.handleMLStatus).Methods("GET")
+
 	// Metrics endpoint
 	s.router.Handle("/metrics", promhttp.Handler()).Methods("GET")
 

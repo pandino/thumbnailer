@@ -142,6 +142,25 @@ func (w *Worker) runScan(ctx context.Context, task string) {
 			w.metrics.RecordScanOperation("success", time.Since(start))
 			w.metrics.RecordBackgroundTask(task, "success")
 		}
+		w.runPreferenceUpkeep(scanCtx)
+	}
+}
+
+// runPreferenceUpkeep records grid geometry for thumbnails that lack it and, if enabled,
+// backfills preference-model training data. Both are idempotent and cheap once done.
+func (w *Worker) runPreferenceUpkeep(ctx context.Context) {
+	if err := w.scanner.BackfillGeometry(ctx); err != nil {
+		w.log.WithError(err).Warn("Grid geometry backfill failed")
+	}
+	if !w.cfg.BackfillLabels {
+		return
+	}
+	if err := w.scanner.BackfillLabels(ctx); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			w.log.Info("Work window closed, label backfill stopped; it will resume after the next scan")
+			return
+		}
+		w.log.WithError(err).Error("Label backfill failed")
 	}
 }
 

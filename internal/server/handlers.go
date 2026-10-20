@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"math"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -53,6 +54,29 @@ type SessionData struct {
 	PendingArchive  bool   `json:"pending_archive"` // Flag indicating if PreviousID thumbnail is marked for archival
 	DeletedSize     int64  `json:"deleted_size"`    // Total size in bytes of movies deleted in this session
 	Tag             string `json:"tag,omitempty"`   // Restrict the slideshow to thumbnails with this tag
+	// Order is the slideshow order (models.Order*); empty means random
+	Order string `json:"order,omitempty"`
+	// Skipped holds the most recent thumbnails skipped without deciding, kept out of this
+	// session: score-based orders would otherwise show them again right away
+	Skipped []int64 `json:"skipped,omitempty"`
+}
+
+// maxSkipped bounds SessionData.Skipped so the session cookie stays small
+const maxSkipped = 100
+
+// addSkipped remembers a skipped thumbnail, dropping the oldest beyond maxSkipped
+func (sd *SessionData) addSkipped(id int64) {
+	sd.Skipped = append(sd.Skipped, id)
+	if len(sd.Skipped) > maxSkipped {
+		sd.Skipped = sd.Skipped[len(sd.Skipped)-maxSkipped:]
+	}
+}
+
+// orderLabels names the score-based slideshow orders for display
+var orderLabels = map[string]string{
+	models.OrderLikelyDelete: "likely delete first",
+	models.OrderUncertain:    "most uncertain first",
+	models.OrderLikelyKeep:   "likely keep first",
 }
 
 // getSessionFromCookie retrieves and validates session data from cookie
@@ -98,8 +122,9 @@ func (s *Server) saveSessionToCookie(w http.ResponseWriter, session *SessionData
 	return nil
 }
 
-// createNewSession creates a new session with initial data, optionally restricted to a tag
-func (s *Server) createNewSession(tag string) (*SessionData, error) {
+// createNewSession creates a new session with initial data, optionally restricted to a tag and
+// ordered by the preference model's scores
+func (s *Server) createNewSession(tag, order string) (*SessionData, error) {
 	var totalImages int
 	if tag != "" {
 		count, err := s.db.GetUnviewedCountByTag(tag)
@@ -129,14 +154,17 @@ func (s *Server) createNewSession(tag string) (*SessionData, error) {
 		PendingArchive:  false,
 		DeletedSize:     0,
 		Tag:             tag,
+		Order:           order,
 	}
 
 	return session, nil
 }
 
-// randomUnviewed picks a random unviewed thumbnail honoring the session's tag filter
+// randomUnviewed picks the next unviewed thumbnail honoring the session's tag filter, order and
+// skipped thumbnails
 func (s *Server) randomUnviewed(session *SessionData, excludeIDs ...int64) (*models.Thumbnail, error) {
-	return s.db.GetRandomUnviewedThumbnailWithTag(session.Tag, excludeIDs...)
+	excludeIDs = append(excludeIDs, session.Skipped...)
+	return s.db.GetUnviewedThumbnailOrdered(session.Tag, session.Order, excludeIDs...)
 }
 
 // noMoreThumbnailsMessage returns the flash message shown when a session runs out of thumbnails
@@ -211,6 +239,13 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 		tags = nil
 	}
 
+	mlStatus, err := s.db.GetMLStatus()
+	if err != nil {
+		s.log.WithError(err).Error("Failed to get preference model status")
+		// Render the page without the model panel
+		mlStatus = nil
+	}
+
 	// Parse template
 	tmpl, err := template.ParseFiles(filepath.Join(s.cfg.TemplatesDir, "control.html"))
 	if err != nil {
@@ -233,6 +268,8 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 		SessionDeletedSizeFormatted string
 		SessionTag                  string
 		Tags                        []models.TagCount
+		ML                          *models.MLStatus
+		AgreementPercent            int
 	}{
 		Stats:                       stats,
 		IsScanning:                  s.scanner.IsScanning(),
@@ -246,6 +283,10 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 		SessionDeletedSizeFormatted: formatBytes(sessionDeletedSize),
 		SessionTag:                  sessionTag,
 		Tags:                        tags,
+		ML:                          mlStatus,
+	}
+	if mlStatus != nil {
+		data.AgreementPercent = int(math.Round(mlStatus.AgreementRatio * 100))
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
@@ -426,8 +467,17 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		order := r.URL.Query().Get("order")
+		if order == models.OrderRandom {
+			order = ""
+		}
+		if order != "" && !models.ValidOrder(order) {
+			http.Error(w, "Invalid order: "+order, http.StatusBadRequest)
+			return
+		}
+
 		var err error
-		session, err = s.createNewSession(tag)
+		session, err = s.createNewSession(tag, order)
 		if err != nil {
 			s.log.WithError(err).Error("Failed to create new session")
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -447,7 +497,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			// No valid session found, create a new one
 			s.log.WithError(err).Debug("No valid session found, creating new session")
-			session, err = s.createNewSession("")
+			session, err = s.createNewSession("", "")
 			if err != nil {
 				s.log.WithError(err).Error("Failed to create fallback session")
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -541,7 +591,8 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		// Pre-determine the next thumbnail for prefetch coordination
 		// Only do this if we don't already have a NextID or if this is a new session
 		if session.NextID == 0 || newSession {
-			nextThumbnail, err := s.randomUnviewed(session)
+			// Exclude the thumbnail being shown: a score-based order would otherwise pick it again
+			nextThumbnail, err := s.randomUnviewed(session, thumbnail.ID)
 			if err == nil && nextThumbnail != nil {
 				session.NextID = nextThumbnail.ID
 				s.log.WithFields(logrus.Fields{
@@ -603,6 +654,12 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		"err":             err,
 	}).Debug("Last thumbnail check")
 
+	// Preference model prediction for the badge
+	score, err := s.db.GetScore(thumbnail.ID)
+	if err != nil {
+		s.log.WithError(err).WithField("thumbnail_id", thumbnail.ID).Warn("Failed to load thumbnail score")
+	}
+
 	// Render template with data
 	data := struct {
 		Thumbnail                   *models.Thumbnail
@@ -615,6 +672,8 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		SessionDeletedSize          int64
 		SessionDeletedSizeFormatted string
 		Tag                         string
+		OrderLabel                  string
+		Score                       *ScoreBadge
 	}{
 		Thumbnail:                   thumbnail,
 		Total:                       session.TotalImages,
@@ -626,6 +685,8 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		SessionDeletedSize:          session.DeletedSize,
 		SessionDeletedSizeFormatted: formatBytes(session.DeletedSize),
 		Tag:                         session.Tag,
+		OrderLabel:                  orderLabels[session.Order],
+		Score:                       newScoreBadge(score),
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
@@ -633,6 +694,23 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+}
+
+// ScoreBadge is the preference model's prediction as shown on a slide
+type ScoreBadge struct {
+	Delete  bool // the model expects a delete
+	Percent int  // confidence in that expectation
+}
+
+// newScoreBadge turns a score into a badge, or nil if the thumbnail isn't scored
+func newScoreBadge(score *models.Score) *ScoreBadge {
+	if score == nil {
+		return nil
+	}
+	if score.PDelete >= 0.5 {
+		return &ScoreBadge{Delete: true, Percent: int(math.Round(score.PDelete * 100))}
+	}
+	return &ScoreBadge{Delete: false, Percent: int(math.Round((1 - score.PDelete) * 100))}
 }
 
 // handleSlideshowNext shows the next thumbnail in the slideshow
@@ -708,8 +786,8 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 			s.log.WithError(err).WithField("nextID", session.NextID).Error("Failed to get predetermined next thumbnail")
 			// Fall back to random
 			session.NextID = 0
-		} else if nextThumbnail != nil && nextThumbnail.IsViewed() {
-			// The predetermined thumbnail was already viewed, get a new one
+		} else if nextThumbnail != nil && (nextThumbnail.IsViewed() || nextThumbnail.ID == currentID) {
+			// The predetermined thumbnail was already viewed or is the current one, get a new one
 			s.log.WithField("nextID", session.NextID).Debug("Predetermined next thumbnail was already viewed, getting new random")
 			session.NextID = 0
 			nextThumbnail = nil
@@ -760,6 +838,8 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 			session.PreviousID = currentID
 		}
 	} else if currentID > 0 && skipViewing {
+		session.addSkipped(currentID)
+
 		// For skip operation, check if the next thumbnail is different from current
 		// If we're skipping the last thumbnail, nextThumbnail will be nil or same as current
 		if nextThumbnail != nil && nextThumbnail.ID != currentID {
@@ -1605,8 +1685,8 @@ func (s *Server) handleAPIArchiveVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mark for archival
-	if err := s.db.MarkForArchivalByID(thumbnail.ID); err != nil {
+	// Mark for archival, recorded as decided after watching
+	if err := s.db.MarkForArchival(thumbnail.ID, models.StagePlayer); err != nil {
 		s.log.WithError(err).WithField("thumbnail_id", thumbnail.ID).Error("Failed to mark video for archival")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(VideoResponse{
@@ -1691,8 +1771,8 @@ func (s *Server) handleAPIDeleteVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mark for deletion
-	if err := s.db.MarkForDeletionByID(thumbnail.ID); err != nil {
+	// Mark for deletion, recorded as decided after watching
+	if err := s.db.MarkForDeletion(thumbnail.ID, models.StagePlayer); err != nil {
 		s.log.WithError(err).WithField("thumbnail_id", thumbnail.ID).Error("Failed to mark video for deletion")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(VideoResponse{

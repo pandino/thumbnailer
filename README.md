@@ -96,6 +96,7 @@ You can configure the application by setting environment variables:
 - `DEBUG`: Enable debug logging (default: `false`)
 - `DISABLE_DELETION`: Disable deletion worker and prevent processing of deletion queue (default: `false`)
 - `IMPORT_EXISTING`: Import existing thumbnails without regenerating (default: `false`)
+- `BACKFILL_LABELS`: Reconstruct preference-model training data after each scan, see [Preference Model](#preference-model) (default: `false`)
 
 ### Monitoring Settings
 - `METRICS_PORT`: Port for Prometheus metrics endpoint (default: same as `SERVER_PORT`)
@@ -199,9 +200,21 @@ Listing for automation (only `success` thumbnails, ordered by id):
 
 - `GET /api/v1/thumbnails` - Cursor-paged list with tags. Filters: `viewed=0|1`, `untagged=true`, `tag=<tag>`, `without_tag=<tag>`, `after_id=<id>`, `limit=1..200` (default 50). Returns `{"items": [{"id", "movie_filename", "thumbnail_url", "viewed", "tags"}], "next_after_id"}`; pass `next_after_id` as `after_id` for the next page, `0` means done.
 
-## AI Tagging
+Preference model worker (see below):
 
-`scripts/ai-tagger/ai_tagger.py` tags thumbnails with a local vision model through any OpenAI-compatible API, by default the llama.cpp router with the `gemma-4-12b-vision` preset (any OpenAI-compatible server works). It prefers your keywords, marks analyzed images with an `ai-reviewed` tag so reruns skip them, and needs only the Python standard library. See `scripts/ai-tagger/README.md`.
+- `GET /api/v1/ml/items` - Live and decided grids with their tile layout. `missing_model=<key>` lists only grids without an embedding for that model; paged with `after_id`/`limit` (max 1000).
+- `GET /api/v1/ml/embeddings?model=<key>` / `PUT /api/v1/ml/embeddings` - Read or store embeddings: `{"model", "embeddings": [{"id", "vector"}]}`
+- `GET /api/v1/ml/decisions` - The decision log: `{"id", "thumbnail_id", "movie_filename", "stage", "action", "source", "p_delete_at_decision", "created_at"}`
+- `PUT /api/v1/ml/scores` - Replace all scores: `{"scores": [{"id", "p_delete", "p_archive"}], "meta": {...}}`
+- `GET /api/v1/ml/status` - Decision counts, embedding/score coverage, model status and agreement
+
+## Preference Model
+
+The app learns which movies you delete and which you keep. Every decision is logged: in the slideshow, delete (`D`), pass (moving on marks the movie viewed) and archive; in MPV, archive and delete after watching. Undo cancels the logged decision. Grids of deleted and archived movies are kept in `thumbnails/decided/` as training history.
+
+`scripts/taste/` runs on a desktop machine: it embeds the grid frames with a SigLIP 2 image model on the CPU, trains small classifiers on your decisions and uploads a score per movie. The slideshow shows each score as a badge ("Delete 87%" / "Keep 74%"), and the control page can start a slideshow ordered by likely delete, most uncertain (teaches the model fastest) or likely keep. See `scripts/taste/README.md`.
+
+`BACKFILL_LABELS=true` reconstructs the history from before decision logging, after each scan: a saved database snapshot and grids in `thumbnails/bootstrap/`, viewed movies as passed, and grids for the movies already in `ARCHIVE_DIR` (generated with ffmpeg). It's idempotent; turn it off once the log reports nothing left to backfill.
 
 For detailed monitoring capabilities, see `METRICS.md` for comprehensive Prometheus metrics documentation.
 

@@ -602,11 +602,34 @@ footer .version-info {
 /* Removed slideshow-actions and action-icon-button styles as they're no longer used */
 
 .thumbnail-display {
+    position: relative;
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
     margin-bottom: 20px;
+}
+
+/* Preference model prediction on the current slide */
+.score-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 2;
+    padding: 4px 10px;
+    border-radius: var(--border-radius);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: white;
+    box-shadow: var(--box-shadow);
+}
+
+.score-badge.likely-delete {
+    background-color: var(--error-color);
+}
+
+.score-badge.likely-keep {
+    background-color: var(--success-color);
 }
 
 .thumbnail-image {
@@ -1100,4 +1123,11 @@ a.tag-link:hover {
     border-color: #ccc;
     color: #999;
     cursor: default;
+}
+
+/* Preference model panel */
+.model-trained {
+    margin: 10px 0;
+    color: #7f8c8d;
+    font-size: 0.9rem;
 }

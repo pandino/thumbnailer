@@ -202,9 +202,10 @@ func TestTagSlideshowSession(t *testing.T) {
 	if session.Tag != "pick me" || session.CurrentID != tagged.ID || session.TotalImages != 1 {
 		t.Errorf("session = %+v; want tag 'pick me', current %d, total 1", session, tagged.ID)
 	}
-	// The prefetch candidate must also come from the tag (it may equal the current one)
-	if session.NextID != tagged.ID {
-		t.Errorf("NextID = %d; want tagged thumbnail %d", session.NextID, tagged.ID)
+	// The prefetch candidate must also come from the tag and never be the current thumbnail,
+	// so with a single tagged thumbnail there is none
+	if session.NextID != 0 {
+		t.Errorf("NextID = %d; want 0 (the only tagged thumbnail is the current one)", session.NextID)
 	}
 
 	// Invalid tag is rejected
