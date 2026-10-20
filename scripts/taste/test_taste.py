@@ -90,6 +90,37 @@ class LabelsTest(unittest.TestCase):
         self.assertEqual(taste.label_summary("watch", 1, 493), "1 delete / 493 archive")
 
 
+class JudgedAtTest(unittest.TestCase):
+    def test_standing_decisions_per_stage(self):
+        decisions = [
+            d(1, 1, "slideshow", "pass"),
+            d(2, 2, "slideshow", "delete"),
+            d(3, 2, "slideshow", "undo"),   # undone: no standing slideshow decision
+            d(4, 3, "player", "archive"),
+        ]
+        self.assertEqual(taste.judged_at(decisions, "slideshow"), {1})
+        self.assertEqual(taste.judged_at(decisions, "player"), {3})
+
+
+@unittest.skipUnless(__import__("importlib").util.find_spec("sklearn"), "scikit-learn not installed")
+class CalibrationTest(unittest.TestCase):
+    def test_probabilities_match_observed_frequencies(self):
+        import numpy as np
+
+        # 10% positives, partly separable: balanced weights alone would put the average
+        # predicted probability near 50%
+        rng = np.random.default_rng(0)
+        y = (rng.random(3000) < 0.1).astype(int)
+        X = rng.normal(size=(3000, 8)) + y[:, None] * 0.8
+        model, auc, brier = taste.train(X, y, "genre")
+        p = model.predict(X)
+        self.assertAlmostEqual(p.mean(), y.mean(), delta=0.02)
+        self.assertGreater(auc, 0.8)
+        # Calibration is monotonic: the ranking is the balanced model's ranking
+        raw = model.model.decision_function(X)
+        self.assertTrue(np.all(np.diff(p[np.argsort(raw)]) >= -1e-12))
+
+
 class DeviceTest(unittest.TestCase):
     def test_resolve_device(self):
         self.assertEqual(taste.resolve_device("cpu", True), "cpu")

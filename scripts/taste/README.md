@@ -23,8 +23,9 @@ The **delete model** predicts the slideshow decision from the grid alone. The **
 ## How a run works
 
 1. **Embed.** Each grid without an embedding is downloaded and cut into its tiles (the server reports the layout). Blank tiles are dropped and up to 16 evenly spaced frames are embedded with SigLIP 2 (`ViT-B-16-SigLIP2-256`). The frame embeddings are averaged. This takes about 1.3 s per grid on a Ryzen 7 5700X3D CPU (0.15 s on the GPU, see below), and each run stops after `--max-minutes` (default 20), so the first pass over a few thousand grids is spread over a few runs.
-2. **Train.** A class-balanced logistic regression per model, with cross-validated regularization. Its cross-validated AUC appears on the control page.
-3. **Score.** All live grids are scored and uploaded, replacing the previous scores.
+2. **Train.** A class-balanced logistic regression per model, with cross-validated regularization, so the rare deletes aren't drowned out by the keeps. Its cross-validated AUC appears on the control page.
+3. **Calibrate.** Balanced weighting ranks well but inflates the probabilities: on production data, movies scored "50–70%" were actually deleted 15% of the time. A Platt scaling fitted on the model's out-of-fold scores maps them to observed frequencies, measured on the population the score is shown for (movies judged in the slideshow for the delete model). It is monotonic, so the ranking and the slideshow orders don't change; the Brier score (lower is better) is reported as `genre_brier`.
+4. **Score.** All live grids are scored and uploaded, replacing the previous scores.
 
 ## Install
 

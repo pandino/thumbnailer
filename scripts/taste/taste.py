@@ -141,6 +141,11 @@ def derive_labels(decisions):
     return {"genre": genre, "watch": watch}
 
 
+def judged_at(decisions, stage):
+    """IDs of thumbnails with a standing decision at the given stage."""
+    return {tid for (tid, s) in final_actions(decisions) if s == stage}
+
+
 def class_counts(labels):
     ones = sum(1 for v in labels.values() if v == 1)
     return len(labels) - ones, ones
@@ -273,19 +278,42 @@ class Embedder:
 
 # --- training ----------------------------------------------------------------
 
-def train(X, y, name):
-    """Fit a class-balanced logistic regression with cross-validated C.
+class CalibratedModel:
+    """A ranking model plus a calibration of its scores into real probabilities.
 
-    Returns (model, cv_auc), or (None, None) when there are too few examples per class.
+    The ranking model is trained with balanced class weights, so the rare class isn't ignored.
+    That weighting also inflates its probabilities: on production data a "60%" delete score was
+    deleted about 15% of the time. A one-feature logistic regression (Platt scaling) on the
+    ranking model's out-of-fold scores maps them back to observed frequencies. It is monotonic,
+    so the ranking (and the slideshow orders) is unchanged.
+    """
+
+    def __init__(self, model, platt):
+        self.model = model
+        self.platt = platt
+
+    def predict(self, X):
+        logits = self.model.decision_function(X).reshape(-1, 1)
+        return self.platt.predict_proba(logits)[:, 1]
+
+
+def train(X, y, name, calibration_mask=None):
+    """Fit a class-balanced logistic regression with cross-validated C, then calibrate it.
+
+    calibration_mask selects the examples whose outcome frequencies the probabilities should
+    match (e.g. movies judged in the slideshow, the population the badge is shown for); None
+    means all. Returns (CalibratedModel, cv_auc, brier), or (None, None, None) when there are
+    too few examples per class.
     """
     import numpy as np
-    from sklearn.linear_model import LogisticRegressionCV
+    from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
+    from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
     zeros, ones = int((y == 0).sum()), int((y == 1).sum())
     if min(zeros, ones) < MIN_PER_CLASS[name]:
         log.info("%s model: %s, need %d of each; not trained",
                  name, label_summary(name, zeros, ones), MIN_PER_CLASS[name])
-        return None, None
+        return None, None, None
 
     folds = min(5, zeros, ones)
     model = LogisticRegressionCV(Cs=np.logspace(-2, 2, 9), cv=folds, scoring="roc_auc",
@@ -293,8 +321,21 @@ def train(X, y, name):
     model.fit(X, y)
     # Mean CV AUC of the chosen C
     auc = float(np.max(model.scores_[1].mean(axis=0)))
-    log.info("%s model: %s, C=%.3g, CV AUC %.3f", name, label_summary(name, zeros, ones), model.C_[0], auc)
-    return model, auc
+
+    # Out-of-fold scores of the same model, so the calibration sees honest, unseen-data scores
+    cv = StratifiedKFold(folds, shuffle=True, random_state=0)
+    same = LogisticRegression(C=model.C_[0], class_weight="balanced", max_iter=5000)
+    logits = cross_val_predict(same, X, y, cv=cv, method="decision_function").reshape(-1, 1)
+    mask = np.ones(len(y), dtype=bool) if calibration_mask is None else np.asarray(calibration_mask)
+    if len(set(y[mask])) < 2:
+        mask = np.ones(len(y), dtype=bool)
+    platt = LogisticRegression(C=1e6, max_iter=1000).fit(logits[mask], y[mask])
+    p = platt.predict_proba(logits[mask])[:, 1]
+    brier = float(np.mean((p - y[mask]) ** 2))
+
+    log.info("%s model: %s, C=%.3g, CV AUC %.3f, calibrated on %d examples (Brier %.4f)",
+             name, label_summary(name, zeros, ones), model.C_[0], auc, int(mask.sum()), brier)
+    return CalibratedModel(model, platt), auc, brier
 
 
 class Worker:
@@ -356,7 +397,10 @@ class Worker:
 
         vectors = {e["id"]: e["vector"] for e in self.server.embeddings(self.model_key)}
         live = {item["id"] for item in self.server.items() if item["live"]}
-        labels = derive_labels(list(self.server.decisions()))
+        decisions = list(self.server.decisions())
+        labels = derive_labels(decisions)
+        # Probabilities are calibrated against the decisions of the stage each model predicts
+        judged = {"genre": judged_at(decisions, "slideshow"), "watch": judged_at(decisions, "player")}
         log.info("%d embeddings, %d live grids", len(vectors), len(live))
 
         meta = {
@@ -372,13 +416,14 @@ class Worker:
                 continue
             X = np.array([vectors[tid] for tid in ids], dtype=np.float32)
             y = np.array([labels[name][tid] for tid in ids])
-            model, auc = train(X, y, name)
+            model, auc, brier = train(X, y, name, [tid in judged[name] for tid in ids])
             if model is None:
                 continue
             meta[f"{name}_auc"] = f"{auc:.2f}"
+            meta[f"{name}_brier"] = f"{brier:.3f}"
             scored = sorted(tid for tid in live if tid in vectors)
             if scored:
-                p = model.predict_proba(np.array([vectors[tid] for tid in scored], dtype=np.float32))[:, 1]
+                p = model.predict(np.array([vectors[tid] for tid in scored], dtype=np.float32))
                 predictions[name] = dict(zip(scored, p.tolist()))
 
         if "genre" not in predictions:
