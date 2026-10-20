@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -124,9 +126,10 @@ func main() {
 	// Start background worker
 	go w.Start(ctx)
 
-	// Start HTTP server
+	// Start HTTP server. Shutdown makes Start return http.ErrServerClosed, which is the normal
+	// end of a graceful stop, not a failure.
 	go func() {
-		if err := srv.Start(); err != nil {
+		if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("Failed to start server: %v", err)
 		}
 	}()
