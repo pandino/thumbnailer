@@ -218,3 +218,25 @@ func TestPlayerDecisionsAreRecorded(t *testing.T) {
 		}
 	}
 }
+
+func TestScoreBadge(t *testing.T) {
+	for _, tc := range []struct {
+		p      float64
+		delete bool
+		pct    int
+	}{
+		{0.9, true, 90},
+		{0.5, true, 50},
+		{0.2, false, 80},
+		{0.996, true, 99}, // never a rounded 100%
+		{0.002, false, 99},
+	} {
+		b := newScoreBadge(&models.Score{PDelete: tc.p})
+		if b.Delete != tc.delete || b.Percent != tc.pct {
+			t.Errorf("p_delete %v -> %+v; want delete=%v %d%%", tc.p, b, tc.delete, tc.pct)
+		}
+	}
+	if newScoreBadge(nil) != nil {
+		t.Error("unscored thumbnail got a badge")
+	}
+}

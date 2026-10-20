@@ -651,15 +651,19 @@ type ScoreBadge struct {
 	Percent int  // confidence in that expectation
 }
 
-// newScoreBadge turns a score into a badge, or nil if the thumbnail isn't scored
+// newScoreBadge turns a score into a badge, or nil if the thumbnail isn't scored. The percentage
+// is capped at 99: a rounded "100%" would claim a certainty the model doesn't have.
 func newScoreBadge(score *models.Score) *ScoreBadge {
 	if score == nil {
 		return nil
 	}
-	if score.PDelete >= 0.5 {
-		return &ScoreBadge{Delete: true, Percent: int(math.Round(score.PDelete * 100))}
+	badge := &ScoreBadge{Delete: score.PDelete >= 0.5}
+	p := score.PDelete
+	if !badge.Delete {
+		p = 1 - p
 	}
-	return &ScoreBadge{Delete: false, Percent: int(math.Round((1 - score.PDelete) * 100))}
+	badge.Percent = int(math.Min(math.Round(p*100), 99))
+	return badge
 }
 
 // handleSlideshowNext shows the next thumbnail in the slideshow
