@@ -81,6 +81,18 @@ def spread(items, n):
     return [items[int(i * step)] for i in range(n)]
 
 
+def split_unknown_layout(items, include_unknown):
+    """Return (items to embed, number skipped) — items whose tile layout is unknown are skipped
+    unless include_unknown is set."""
+    keep, skipped = [], 0
+    for item in items:
+        if tile_boxes(item.get("geometry", {})) or include_unknown:
+            keep.append(item)
+        else:
+            skipped += 1
+    return keep, skipped
+
+
 def final_actions(decisions):
     """Reduce the decision log to the standing action per (thumbnail, stage).
 
@@ -287,9 +299,14 @@ class Worker:
     def embed_missing(self):
         """Embed grids without an embedding until done, stopped or out of time."""
         deadline = time.monotonic() + self.args.max_minutes * 60
-        pending = list(self.server.items(self.model_key))
+        pending, unknown = split_unknown_layout(self.server.items(self.model_key), self.args.embed_unknown_layout)
+        if unknown:
+            # The server reports "not checked yet" and "checked, not a standard grid" the same way,
+            # and an embedding is never recomputed, so don't embed them as whole images by default
+            log.info("Skipping %d grids with an unknown tile layout (the server records layouts after "
+                     "its next scan; --embed-unknown-layout embeds them as whole images)", unknown)
         if not pending:
-            log.info("All grids are embedded")
+            log.info("Nothing to embed")
             return 0
         log.info("%d grids to embed", len(pending))
 
@@ -394,6 +411,8 @@ def parse_args(argv):
                         "or auto (GPU if usable)")
     p.add_argument("--threads", type=int, default=0, help="torch CPU threads (default: torch's choice)")
     p.add_argument("--timeout", type=float, default=60, help="HTTP timeout in seconds (default 60)")
+    p.add_argument("--embed-unknown-layout", action="store_true",
+                   help="embed grids with an unknown tile layout as whole images (default: skip them)")
     p.add_argument("--no-embed", action="store_true", help="only train and score")
     p.add_argument("--dry-run", action="store_true", help="embed, but only print the scores instead of uploading")
     p.add_argument("--lock", default=os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "thumbnailer-taste.lock"),

@@ -24,6 +24,23 @@ class TileBoxesTest(unittest.TestCase):
         self.assertEqual(taste.tile_boxes({}), [])
 
 
+class UnknownLayoutTest(unittest.TestCase):
+    ITEMS = [
+        {"id": 1, "geometry": {"cols": 8, "rows": 4, "tile_width": 320, "tile_height": 180, "padding": 4}},
+        {"id": 2, "geometry": {"cols": 0, "rows": 0, "tile_width": 0, "tile_height": 0, "padding": 0}},
+    ]
+
+    def test_unknown_skipped_by_default(self):
+        keep, skipped = taste.split_unknown_layout(self.ITEMS, False)
+        self.assertEqual([i["id"] for i in keep], [1])
+        self.assertEqual(skipped, 1)
+
+    def test_unknown_included_on_request(self):
+        keep, skipped = taste.split_unknown_layout(self.ITEMS, True)
+        self.assertEqual([i["id"] for i in keep], [1, 2])
+        self.assertEqual(skipped, 0)
+
+
 class SpreadTest(unittest.TestCase):
     def test_evenly_spaced(self):
         self.assertEqual(taste.spread(list(range(32)), 4), [0, 8, 16, 24])
