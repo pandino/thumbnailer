@@ -112,21 +112,12 @@ func (s *Server) routes() {
 	s.router.HandleFunc("/api/stats", s.handleStats).Methods("GET")
 	s.router.HandleFunc("/api/thumbnails", s.handleThumbnails).Methods("GET")
 	s.router.HandleFunc("/api/thumbnails/{id}", s.handleThumbnail).Methods("GET")
-	s.router.HandleFunc("/api/tags", s.handleAPITags).Methods("GET")
-	s.router.HandleFunc("/api/thumbnails/{id}/tags", s.handleGetThumbnailTags).Methods("GET")
-	s.router.HandleFunc("/api/thumbnails/{id}/tags", s.handleSetThumbnailTags).Methods("PUT")
-	s.router.HandleFunc("/api/thumbnails/{id}/tags", s.handleAddThumbnailTags).Methods("POST")
-	s.router.HandleFunc("/api/thumbnails/{id}/tags/{tag}", s.handleRemoveThumbnailTag).Methods("DELETE")
 	s.router.HandleFunc("/api/slideshow/next-image", s.handleSlideshowNextImage).Methods("GET")
 
 	// API v1 routes for video operations
 	s.router.HandleFunc("/api/v1/video/archive", s.handleAPIArchiveVideo).Methods("POST")
 	s.router.HandleFunc("/api/v1/video/delete", s.handleAPIDeleteVideo).Methods("POST")
 	s.router.HandleFunc("/api/v1/video/status/{filename}", s.handleAPIVideoStatus).Methods("GET")
-	s.router.HandleFunc("/api/v1/video/tags/{filename}", s.handleAPIGetVideoTags).Methods("GET")
-	s.router.HandleFunc("/api/v1/video/tags", s.handleAPISetVideoTags).Methods("PUT")
-	s.router.HandleFunc("/api/v1/video/tags", s.handleAPIUpdateVideoTags).Methods("POST")
-	s.router.HandleFunc("/api/v1/thumbnails", s.handleAPIListThumbnails).Methods("GET")
 
 	// API v1 routes for the preference-model worker
 	s.router.HandleFunc("/api/v1/ml/items", s.handleMLItems).Methods("GET")

@@ -94,11 +94,7 @@ function renderThumbnails(container, thumbnails) {
                     <img src="/thumbnails/${thumbnail.thumbnail_path}" alt="${thumbnail.movie_filename}">
                     <div class="thumbnail-info">
                         <div class="thumbnail-title">${thumbnail.movie_filename}</div>
-                        <div class="thumbnail-meta">
-                            <span>${formatDuration(thumbnail.duration)}</span>
-                            <span>${formatFileSize(thumbnail.file_size || 0)}</span>
-                            <span>${formatDate(thumbnail.updated_at)}</span>
-                        </div>
+                        <div class="thumbnail-meta">${thumbnailMeta(thumbnail, thumbnail.updated_at)}</div>
                     </div>
                     <button class="undo-delete-btn" data-thumbnail-id="${thumbnail.id}" title="Undo deletion">↩️ Undo</button>
                 </div>
@@ -111,12 +107,7 @@ function renderThumbnails(container, thumbnails) {
                     <img src="/thumbnails/${thumbnail.thumbnail_path}" alt="${thumbnail.movie_filename}">
                     <div class="thumbnail-info">
                         <div class="thumbnail-title">${thumbnail.movie_filename}</div>
-                        <div class="thumbnail-meta">
-                            <span>${formatDuration(thumbnail.duration)}</span>
-                            <span>${formatFileSize(thumbnail.file_size || 0)}</span>
-                            <span>${formatDate(thumbnail.created_at)}</span>
-                            ${thumbnail.source ? `<span class="source-label">${thumbnail.source}</span>` : ''}
-                        </div>
+                        <div class="thumbnail-meta">${thumbnailMeta(thumbnail, thumbnail.created_at)}</div>
                     </div>
                 </a>
             `;
@@ -181,6 +172,13 @@ function undoDeleteMovie(thumbnailId, buttonElement) {
 }
 
 
+// One line of card details: duration · size · date
+function thumbnailMeta(thumbnail, date) {
+    return [formatDuration(thumbnail.duration), formatFileSize(thumbnail.file_size || 0), formatDate(date)]
+        .filter(part => part)
+        .join(' · ');
+}
+
 // Format duration in seconds to MM:SS or HH:MM:SS
 function formatDuration(seconds) {
     if (!seconds) return '00:00';
@@ -226,7 +224,7 @@ function formatDate(dateString) {
             const diffMinutes = Math.floor(diffMs / (1000 * 60));
             return `${diffMinutes} min ago`;
         }
-        return `${diffHours} hours ago`;
+        return diffHours === 1 ? '1 hour ago' : `${diffHours} hours ago`;
     } else if (diffDays === 1) {
         return 'Yesterday';
     } else if (diffDays < 7) {

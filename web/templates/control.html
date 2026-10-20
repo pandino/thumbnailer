@@ -67,53 +67,67 @@
                 </div>
             </section>
 
+            {{if .Stats.Unviewed}}
+            <section class="slideshow-panel">
+                <h2>Slideshow</h2>
+                <div class="slideshow-actions">
+                    {{if .HasSession}}
+                    <a href="/slideshow" class="continue-slideshow">Continue ({{.SessionViewedCount}}/{{.SessionTotalCount}})</a>
+                    {{end}}
+                    <a href="/slideshow?new=true" class="start-slideshow">Start new</a>
+                    {{if and .ML (gt .ML.Scored 0)}}
+                    <a href="/slideshow?new=true&order=likely-delete" class="start-slideshow ordered" title="Movies the model expects you to delete come first">Likely delete first</a>
+                    <a href="/slideshow?new=true&order=uncertain" class="start-slideshow ordered" title="Movies the model is least sure about come first: deciding them teaches it the most">Most uncertain first</a>
+                    <a href="/slideshow?new=true&order=likely-keep" class="start-slideshow ordered" title="Movies the model expects you to keep come first">Likely keep first</a>
+                    {{end}}
+                    {{if and .HasSession (gt .SessionDeletedSize 0)}}
+                    <span class="session-deleted-info">Deleted in this session: {{.SessionDeletedSizeFormatted}}</span>
+                    {{end}}
+                </div>
+            </section>
+            {{end}}
+
             {{with .ML}}
             <section class="model-panel">
                 <h2>Preference Model</h2>
                 <div class="stats-grid">
-                    <div class="stat-box">
-                        <span class="stat-value">{{index .Decisions "slideshow/delete"}} / {{index .Decisions "slideshow/pass"}} / {{index .Decisions "slideshow/archive"}}</span>
-                        <span class="stat-label">Slideshow delete / pass / archive</span>
+                    <div class="stat-box error">
+                        <span class="stat-value">{{index .Decisions "slideshow/delete"}}</span>
+                        <span class="stat-label">Deleted in slideshow</span>
+                    </div>
+                    <div class="stat-box viewed">
+                        <span class="stat-value">{{index .Decisions "slideshow/pass"}}</span>
+                        <span class="stat-label">Passed in slideshow</span>
+                    </div>
+                    <div class="stat-box unviewed">
+                        <span class="stat-value">{{$.MLArchived}}</span>
+                        <span class="stat-label">Archived</span>
+                    </div>
+                    <div class="stat-box pending">
+                        <span class="stat-value">{{index .Decisions "player/delete"}}</span>
+                        <span class="stat-label">Deleted after watching</span>
                     </div>
                     <div class="stat-box">
-                        <span class="stat-value">{{index .Decisions "player/delete"}} / {{index .Decisions "player/archive"}}</span>
-                        <span class="stat-label">After watching delete / archive</span>
-                    </div>
-                    <div class="stat-box">
-                        <span class="stat-value">{{.Embedded}} / {{.Scored}}</span>
-                        <span class="stat-label">Embedded / scored</span>
+                        <span class="stat-value">{{.Scored}}</span>
+                        <span class="stat-label">Movies scored</span>
+                        <span class="stat-size">{{.Embedded}} grids embedded</span>
                     </div>
                     {{with index .Meta "genre_auc"}}
-                    <div class="stat-box">
+                    <div class="stat-box success">
                         <span class="stat-value">{{.}}</span>
-                        <span class="stat-label">Delete model CV AUC</span>
+                        <span class="stat-label">Delete model AUC</span>
+                        <span class="stat-size">cross-validated, 1.0 = perfect</span>
                     </div>
                     {{end}}
                     {{if gt .AgreementN 0}}
-                    <div class="stat-box">
+                    <div class="stat-box success">
                         <span class="stat-value">{{$.AgreementPercent}}%</span>
-                        <span class="stat-label">Agreed on last {{.AgreementN}} decisions</span>
+                        <span class="stat-label">Agreement</span>
+                        <span class="stat-size">on your last {{.AgreementN}} decisions</span>
                     </div>
                     {{end}}
                 </div>
                 {{with index .Meta "trained_at"}}<p class="model-trained">Last trained {{.}}{{with index $.ML.Meta "model"}} · {{.}}{{end}}</p>{{end}}
-                {{if gt .Scored 0}}
-                <div class="slideshow-actions">
-                    <a href="/slideshow?new=true&order=likely-delete" class="start-slideshow">Likely delete first</a>
-                    <a href="/slideshow?new=true&order=uncertain" class="start-slideshow">Most uncertain first</a>
-                    <a href="/slideshow?new=true&order=likely-keep" class="start-slideshow">Likely keep first</a>
-                </div>
-                {{end}}
-            </section>
-            {{end}}
-
-            {{if .Tags}}
-            <section class="tags-panel">
-                <h2>Tags</h2>
-                <p class="tag-cloud">
-                    {{range .Tags}}{{if gt .Unviewed 0}}<a class="tag-link" href="/slideshow?new=true&tag={{.Tag}}" title="{{.Unviewed}} of {{.Count}} unviewed — start slideshow">{{.Tag}}<span class="tag-count">{{.Count}}</span></a>{{else}}<span class="tag-link tag-empty" title="All viewed">{{.Tag}}<span class="tag-count">{{.Count}}</span></span>{{end}}
-                    {{end}}
-                </p>
             </section>
             {{end}}
 
@@ -180,16 +194,6 @@
             <section class="thumbnails-panel">
                 <h2>Recent Unviewed Thumbnails (Showing {{if lt .Stats.Unviewed 10}}{{.Stats.Unviewed}}{{else}}10{{end}} of {{.Stats.Unviewed}})</h2>
                 
-                <div class="slideshow-actions">
-                    <a href="/slideshow?new=true" class="start-slideshow">Start New Slideshow</a>
-                    {{if .HasSession}}
-                    <a href="/slideshow" class="continue-slideshow">Continue Slideshow{{if .SessionTag}} — tag {{.SessionTag}}{{end}} ({{.SessionViewedCount}}/{{.SessionTotalCount}})</a>
-                    {{if gt .SessionDeletedSize 0}}
-                    <span class="session-deleted-info">Deleted in this session: {{.SessionDeletedSizeFormatted}}</span>
-                    {{end}}
-                    {{end}}
-                </div>
-                
                 <div id="unviewed-thumbnails" class="thumbnails-grid">
                     <div class="loading">Loading...</div>
                 </div>
@@ -228,8 +232,8 @@
         </main>
 
         <footer>
-            <p>Movie Thumbnailer &copy; 2025</p>
-            <p class="version-info">v{{.Version.Version}} ({{.Version.Commit}}) - Built: {{.Version.BuildDate}}</p>
+            <p>Movie Thumbnailer</p>
+            <p class="version-info">{{.Version.Version}} ({{.Version.Commit}}) - Built: {{.Version.BuildDate}}</p>
         </footer>
     </div>
 

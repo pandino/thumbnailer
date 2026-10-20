@@ -123,20 +123,15 @@ CREATE TABLE thumbnails (
     error_message TEXT NOT NULL DEFAULT '',
     source TEXT DEFAULT 'generated'
 );
-
-CREATE TABLE thumbnail_tags (
-    thumbnail_id INTEGER NOT NULL,
-    tag TEXT NOT NULL,
-    PRIMARY KEY (thumbnail_id, tag)
-);
 ```
+
+The preference model adds `decisions`, `decided_movies`, `grid_geometry`, `embeddings`, `scores` and `ml_meta` (see [Preference Model](#preference-model)).
 
 Key fields:
 - `status`: Current processing status ('pending', 'success', 'error', 'deleted', 'archived')
 - `viewed`: Whether the thumbnail has been viewed by the user (0 or 1)
 - `source`: How the thumbnail was created ('generated' or 'imported')
 - `file_size`: Size of the movie file in bytes
-- `thumbnail_tags.tag`: Free-form tag, normalized to lowercase with collapsed whitespace (max 64 chars, no `,` or `/`)
 
 ## Web Interface
 
@@ -148,12 +143,12 @@ The application provides two main pages:
 - **Manual Controls**: Buttons for scanning, cleanup, processing deletions, and processing archival
 - **Thumbnail Lists**: Browse thumbnails by status (unviewed, viewed, deleted, archived, errors)
 - **Real-time Updates**: Dynamic loading of thumbnail data via JavaScript
-- **Slideshow Launcher**: Start new slideshow sessions from unviewed thumbnails
-- **Tags**: All tags in one paragraph, most frequent first; click a tag to start a slideshow of its unviewed thumbnails (`/slideshow?new=true&tag=<tag>`)
+- **Slideshow Launcher**: Continue the current session, or start a new one in random order or ordered by the preference model's scores (`/slideshow?new=true&order=likely-delete|uncertain|likely-keep`)
+- **Preference Model**: Decision counts, scored movies, model quality and agreement with your recent decisions
 
 ### Slideshow Page (/slideshow)
 - Displays thumbnails in a fullscreen slideshow view
-- Shows random unviewed thumbnails
+- Shows unviewed thumbnails, at random or in score order, with the model's prediction ("Delete 87%" / "Keep 74%") next to the slide counter
 - Tracks session progress and statistics
 - Keyboard shortcuts:
   - **→** (Right arrow) or **Space**: Mark as viewed and go to next thumbnail
@@ -184,21 +179,6 @@ The application provides several API endpoints for programmatic access:
 - `POST /api/v1/video/archive` - Archive a video by filename
 - `POST /api/v1/video/delete` - Delete a video by filename
 - `GET /api/v1/video/status/{filename}` - Get video status by filename
-
-Tag endpoints (tag responses are `{"success", "thumbnail_id", "filename", "tags": [...]}`):
-
-- `GET /api/tags` - All tags on successful thumbnails with `count` and `unviewed`, most frequent first
-- `GET /api/thumbnails/{id}/tags` - Get a thumbnail's tags
-- `PUT /api/thumbnails/{id}/tags` - Replace all tags: `{"tags": ["a", "b"]}`
-- `POST /api/thumbnails/{id}/tags` - Add tags: `{"tags": ["c"]}`
-- `DELETE /api/thumbnails/{id}/tags/{tag}` - Remove one tag
-- `GET /api/v1/video/tags/{filename}` - Get a video's tags by filename
-- `PUT /api/v1/video/tags` - Replace all tags by filename: `{"filename": "x.mp4", "tags": ["a"]}`
-- `POST /api/v1/video/tags` - Add/remove tags by filename: `{"filename": "x.mp4", "add": ["a"], "remove": ["b"]}`
-
-Listing for automation (only `success` thumbnails, ordered by id):
-
-- `GET /api/v1/thumbnails` - Cursor-paged list with tags. Filters: `viewed=0|1`, `untagged=true`, `tag=<tag>`, `without_tag=<tag>`, `after_id=<id>`, `limit=1..200` (default 50). Returns `{"items": [{"id", "movie_filename", "thumbnail_url", "viewed", "tags"}], "next_after_id"}`; pass `next_after_id` as `after_id` for the next page, `0` means done.
 
 Preference model worker (see below):
 

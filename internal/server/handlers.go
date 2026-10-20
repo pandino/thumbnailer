@@ -43,17 +43,16 @@ func formatBytes(bytes int64) string {
 }
 
 type SessionData struct {
-	TotalImages     int    `json:"total_images"`
-	ViewedCount     int    `json:"viewed_count"`
-	NavigationCount int    `json:"navigation_count"` // Track actual navigation through slideshow
-	CurrentID       int64  `json:"current_id"`
-	StartedAt       int64  `json:"started_at"`
-	PreviousID      int64  `json:"previous_id"`     // Store previous thumbnail ID for single undo/navigation
-	NextID          int64  `json:"next_id"`         // Store next thumbnail ID for coordination with prefetcher
-	PendingDelete   bool   `json:"pending_delete"`  // Flag indicating if PreviousID thumbnail is marked for deletion
-	PendingArchive  bool   `json:"pending_archive"` // Flag indicating if PreviousID thumbnail is marked for archival
-	DeletedSize     int64  `json:"deleted_size"`    // Total size in bytes of movies deleted in this session
-	Tag             string `json:"tag,omitempty"`   // Restrict the slideshow to thumbnails with this tag
+	TotalImages     int   `json:"total_images"`
+	ViewedCount     int   `json:"viewed_count"`
+	NavigationCount int   `json:"navigation_count"` // Track actual navigation through slideshow
+	CurrentID       int64 `json:"current_id"`
+	StartedAt       int64 `json:"started_at"`
+	PreviousID      int64 `json:"previous_id"`     // Store previous thumbnail ID for single undo/navigation
+	NextID          int64 `json:"next_id"`         // Store next thumbnail ID for coordination with prefetcher
+	PendingDelete   bool  `json:"pending_delete"`  // Flag indicating if PreviousID thumbnail is marked for deletion
+	PendingArchive  bool  `json:"pending_archive"` // Flag indicating if PreviousID thumbnail is marked for archival
+	DeletedSize     int64 `json:"deleted_size"`    // Total size in bytes of movies deleted in this session
 	// Order is the slideshow order (models.Order*); empty means random
 	Order string `json:"order,omitempty"`
 	// Skipped holds the most recent thumbnails skipped without deciding, kept out of this
@@ -122,28 +121,18 @@ func (s *Server) saveSessionToCookie(w http.ResponseWriter, session *SessionData
 	return nil
 }
 
-// createNewSession creates a new session with initial data, optionally restricted to a tag and
-// ordered by the preference model's scores
-func (s *Server) createNewSession(tag, order string) (*SessionData, error) {
-	var totalImages int
-	if tag != "" {
-		count, err := s.db.GetUnviewedCountByTag(tag)
-		if err != nil {
-			s.log.WithError(err).WithField("tag", tag).Error("Failed to count tagged thumbnails for new session")
-		}
-		totalImages = count
-	} else {
-		stats, err := s.scanner.GetStats()
-		if err != nil {
-			s.log.WithError(err).Error("Failed to get stats for new session")
-			// Continue with zero count as fallback
-			stats = &models.Stats{}
-		}
-		totalImages = stats.Unviewed
+// createNewSession creates a new session with initial data, optionally ordered by the
+// preference model's scores
+func (s *Server) createNewSession(order string) (*SessionData, error) {
+	stats, err := s.scanner.GetStats()
+	if err != nil {
+		s.log.WithError(err).Error("Failed to get stats for new session")
+		// Continue with zero count as fallback
+		stats = &models.Stats{}
 	}
 
 	session := &SessionData{
-		TotalImages:     totalImages,
+		TotalImages:     stats.Unviewed,
 		ViewedCount:     0,
 		NavigationCount: 0,
 		CurrentID:       0,
@@ -153,26 +142,17 @@ func (s *Server) createNewSession(tag, order string) (*SessionData, error) {
 		PendingDelete:   false,
 		PendingArchive:  false,
 		DeletedSize:     0,
-		Tag:             tag,
 		Order:           order,
 	}
 
 	return session, nil
 }
 
-// randomUnviewed picks the next unviewed thumbnail honoring the session's tag filter, order and
-// skipped thumbnails
+// randomUnviewed picks the next unviewed thumbnail honoring the session's order and skipped
+// thumbnails
 func (s *Server) randomUnviewed(session *SessionData, excludeIDs ...int64) (*models.Thumbnail, error) {
 	excludeIDs = append(excludeIDs, session.Skipped...)
-	return s.db.GetUnviewedThumbnailOrdered(session.Tag, session.Order, excludeIDs...)
-}
-
-// noMoreThumbnailsMessage returns the flash message shown when a session runs out of thumbnails
-func noMoreThumbnailsMessage(session *SessionData, fallback string) string {
-	if session.Tag != "" {
-		return "No more unviewed thumbnails tagged: " + session.Tag
-	}
-	return fallback
+	return s.db.GetUnviewedThumbnailOrdered(session.Order, excludeIDs...)
 }
 
 // redirectToSlideshow redirects to /slideshow without ID parameter (uses session state)
@@ -213,7 +193,6 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 	var sessionViewedCount int
 	var sessionTotalCount int
 	var sessionDeletedSize int64
-	var sessionTag string
 
 	sessionCookie, err := r.Cookie("slideshow_session")
 	if err == nil && sessionCookie.Value != "" {
@@ -227,16 +206,8 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 				sessionViewedCount = session.ViewedCount
 				sessionTotalCount = session.TotalImages
 				sessionDeletedSize = session.DeletedSize
-				sessionTag = session.Tag
 			}
 		}
-	}
-
-	tags, err := s.db.GetTagCounts()
-	if err != nil {
-		s.log.WithError(err).Error("Failed to get tag counts")
-		// Render the page without the tag cloud
-		tags = nil
 	}
 
 	mlStatus, err := s.db.GetMLStatus()
@@ -266,9 +237,8 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 		ViewedSizeFormatted         string
 		UnviewedSizeFormatted       string
 		SessionDeletedSizeFormatted string
-		SessionTag                  string
-		Tags                        []models.TagCount
 		ML                          *models.MLStatus
+		MLArchived                  int
 		AgreementPercent            int
 	}{
 		Stats:                       stats,
@@ -281,11 +251,11 @@ func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
 		ViewedSizeFormatted:         formatBytes(stats.ViewedSize),
 		UnviewedSizeFormatted:       formatBytes(stats.UnviewedSize),
 		SessionDeletedSizeFormatted: formatBytes(sessionDeletedSize),
-		SessionTag:                  sessionTag,
-		Tags:                        tags,
 		ML:                          mlStatus,
 	}
 	if mlStatus != nil {
+		data.MLArchived = mlStatus.Decisions[models.StageSlideshow+"/"+models.ActionArchive] +
+			mlStatus.Decisions[models.StagePlayer+"/"+models.ActionArchive]
 		data.AgreementPercent = int(math.Round(mlStatus.AgreementRatio * 100))
 	}
 
@@ -456,17 +426,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 	var session *SessionData
 
 	if newSession {
-		// Create a new session, optionally restricted to a tag
-		tag := ""
-		if rawTag := r.URL.Query().Get("tag"); rawTag != "" {
-			var err error
-			tag, err = models.NormalizeTag(rawTag)
-			if err != nil {
-				http.Error(w, "Invalid tag: "+err.Error(), http.StatusBadRequest)
-				return
-			}
-		}
-
+		// Create a new session, optionally ordered by score
 		order := r.URL.Query().Get("order")
 		if order == models.OrderRandom {
 			order = ""
@@ -477,7 +437,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var err error
-		session, err = s.createNewSession(tag, order)
+		session, err = s.createNewSession(order)
 		if err != nil {
 			s.log.WithError(err).Error("Failed to create new session")
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -497,7 +457,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			// No valid session found, create a new one
 			s.log.WithError(err).Debug("No valid session found, creating new session")
-			session, err = s.createNewSession("", "")
+			session, err = s.createNewSession("")
 			if err != nil {
 				s.log.WithError(err).Error("Failed to create fallback session")
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -542,7 +502,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 	if thumbnail == nil {
 		http.SetCookie(w, &http.Cookie{
 			Name:  "flash",
-			Value: noMoreThumbnailsMessage(session, "No unviewed thumbnails found"),
+			Value: "No unviewed thumbnails found",
 			Path:  "/",
 		})
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -613,13 +573,6 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 	// Calculate current position in this session
 	position := session.NavigationCount + 1
 
-	// Load the current thumbnail's tags for display
-	if tags, err := s.db.GetTags(thumbnail.ID); err != nil {
-		s.log.WithError(err).WithField("thumbnail_id", thumbnail.ID).Warn("Failed to load thumbnail tags")
-	} else {
-		thumbnail.Tags = tags
-	}
-
 	// Parse template
 	tmpl, err := template.ParseFiles(filepath.Join(s.cfg.TemplatesDir, "slideshow.html"))
 	if err != nil {
@@ -671,7 +624,6 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		IsLastThumbnail             bool
 		SessionDeletedSize          int64
 		SessionDeletedSizeFormatted string
-		Tag                         string
 		OrderLabel                  string
 		Score                       *ScoreBadge
 	}{
@@ -684,7 +636,6 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 		IsLastThumbnail:             isLastThumbnail,
 		SessionDeletedSize:          session.DeletedSize,
 		SessionDeletedSizeFormatted: formatBytes(session.DeletedSize),
-		Tag:                         session.Tag,
 		OrderLabel:                  orderLabels[session.Order],
 		Score:                       newScoreBadge(score),
 	}
@@ -822,7 +773,7 @@ func (s *Server) handleSlideshowNext(w http.ResponseWriter, r *http.Request) {
 	if nextThumbnail == nil {
 		http.SetCookie(w, &http.Cookie{
 			Name:  "flash",
-			Value: noMoreThumbnailsMessage(session, "No more thumbnails to view"),
+			Value: "No more thumbnails to view",
 			Path:  "/",
 		})
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -1387,14 +1338,6 @@ func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Thumbnail not found", http.StatusNotFound)
 		return
 	}
-
-	tags, err := s.db.GetTags(thumbnail.ID)
-	if err != nil {
-		s.log.WithError(err).WithField("id", id).Error("Failed to get thumbnail tags")
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	thumbnail.Tags = tags
 
 	// Return thumbnail as JSON
 	w.Header().Set("Content-Type", "application/json")

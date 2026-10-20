@@ -27,9 +27,9 @@ func mlRequest(t *testing.T, handler http.HandlerFunc, method, target string, bo
 }
 
 func TestMLEndpointsRoundTrip(t *testing.T) {
-	s, db := newTagTestServer(t)
-	a := addTagTestThumbnail(t, db, "with space.mp4", 0)
-	b := addTagTestThumbnail(t, db, "b.mp4", 0)
+	s, db := newDBTestServer(t)
+	a := addDBTestThumbnail(t, db, "with space.mp4", 0)
+	b := addDBTestThumbnail(t, db, "b.mp4", 0)
 	db.SetGeometry(a.ID, models.GridGeometry{Cols: 8, Rows: 4, TileWidth: 320, TileHeight: 180, Padding: 4})
 	db.MarkForDeletionByID(b.ID)
 
@@ -132,12 +132,12 @@ func sessionFrom(t *testing.T, rr *httptest.ResponseRecorder) (*SessionData, *ht
 }
 
 func TestOrderedSlideshowSession(t *testing.T) {
-	s, db := newTagTestServer(t)
+	s, db := newDBTestServer(t)
 	// Untagged sessions count unviewed thumbnails through the scanner
 	s.scanner = scanner.New(s.cfg, db, s.log, nil)
-	high := addTagTestThumbnail(t, db, "high.mp4", 0)
-	mid := addTagTestThumbnail(t, db, "mid.mp4", 0)
-	low := addTagTestThumbnail(t, db, "low.mp4", 0)
+	high := addDBTestThumbnail(t, db, "high.mp4", 0)
+	mid := addDBTestThumbnail(t, db, "mid.mp4", 0)
+	low := addDBTestThumbnail(t, db, "low.mp4", 0)
 	db.ReplaceScores([]models.Score{
 		{ThumbnailID: high.ID, PDelete: 0.9},
 		{ThumbnailID: mid.ID, PDelete: 0.6},
@@ -194,9 +194,9 @@ func TestOrderedSlideshowSession(t *testing.T) {
 }
 
 func TestPlayerDecisionsAreRecorded(t *testing.T) {
-	s, db := newTagTestServer(t)
-	watched := addTagTestThumbnail(t, db, "watched.mp4", 1)
-	disliked := addTagTestThumbnail(t, db, "disliked.mp4", 1)
+	s, db := newDBTestServer(t)
+	watched := addDBTestThumbnail(t, db, "watched.mp4", 1)
+	disliked := addDBTestThumbnail(t, db, "disliked.mp4", 1)
 
 	rr := mlRequest(t, s.handleAPIArchiveVideo, "POST", "/api/v1/video/archive", VideoRequest{Filename: "watched.mp4"})
 	if rr.Code != http.StatusOK {

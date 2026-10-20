@@ -136,9 +136,9 @@ func TestOrderedSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pick := func(tag, order string, exclude ...int64) int64 {
+	pick := func(order string, exclude ...int64) int64 {
 		t.Helper()
-		th, err := db.GetUnviewedThumbnailOrdered(tag, order, exclude...)
+		th, err := db.GetUnviewedThumbnailOrdered(order, exclude...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -148,30 +148,24 @@ func TestOrderedSelection(t *testing.T) {
 		return th.ID
 	}
 
-	if got := pick("", models.OrderLikelyDelete); got != high.ID {
+	if got := pick(models.OrderLikelyDelete); got != high.ID {
 		t.Errorf("likely-delete = %d; want %d (viewed ones are skipped)", got, high.ID)
 	}
-	if got := pick("", models.OrderLikelyDelete, high.ID); got != mid.ID {
+	if got := pick(models.OrderLikelyDelete, high.ID); got != mid.ID {
 		t.Errorf("likely-delete excluding top = %d; want %d", got, mid.ID)
 	}
-	if got := pick("", models.OrderLikelyKeep); got != low.ID {
+	if got := pick(models.OrderLikelyKeep); got != low.ID {
 		t.Errorf("likely-keep = %d; want %d", got, low.ID)
 	}
-	if got := pick("", models.OrderUncertain); got != mid.ID {
+	if got := pick(models.OrderUncertain); got != mid.ID {
 		t.Errorf("uncertain = %d; want %d", got, mid.ID)
 	}
 	// Scored ones exhausted: fall back to an unscored thumbnail
-	if got := pick("", models.OrderLikelyDelete, high.ID, mid.ID, low.ID); got != unscored.ID {
+	if got := pick(models.OrderLikelyDelete, high.ID, mid.ID, low.ID); got != unscored.ID {
 		t.Errorf("fallback = %d; want unscored %d", got, unscored.ID)
 	}
-	if got := pick("", models.OrderLikelyDelete, high.ID, mid.ID, low.ID, unscored.ID); got != 0 {
+	if got := pick(models.OrderLikelyDelete, high.ID, mid.ID, low.ID, unscored.ID); got != 0 {
 		t.Errorf("nothing left = %d; want 0", got)
-	}
-
-	// The tag filter still applies
-	db.SetTags(low.ID, []string{"keepers"})
-	if got := pick("keepers", models.OrderLikelyDelete); got != low.ID {
-		t.Errorf("tagged likely-delete = %d; want %d", got, low.ID)
 	}
 }
 
