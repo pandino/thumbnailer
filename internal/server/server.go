@@ -247,4 +247,12 @@ func (s *Server) UpdateMetricsFromStats() {
 
 	// Update file sizes
 	s.metrics.UpdateFileSizes(stats.ViewedSize, stats.UnviewedSize)
+
+	// Preference model status
+	status, err := s.db.GetMLStatus()
+	if err != nil {
+		s.log.WithError(err).Error("Failed to get model status for metrics")
+		return
+	}
+	s.metrics.UpdateModelStatus(status)
 }

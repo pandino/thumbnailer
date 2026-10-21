@@ -95,6 +95,30 @@ This document describes the Prometheus metrics exposed by the Movie Thumbnailer 
   - Operation types: deletion_queue, missing_files
   - Useful for monitoring storage space reclaimed during cleanup
 
+### Preference Model Metrics
+Refreshed every 30 seconds from what the worker (`scripts/taste`) last uploaded and from the database.
+
+- **`movie_thumbnailer_ml_trained_timestamp_seconds`** (Gauge)
+  - Unix time the model was last trained (the worker's `trained_at`, read in the server's time zone; 0 = never)
+  - Useful for detecting a worker that stopped running
+
+- **`movie_thumbnailer_ml_cv_auc`** (Gauge with label: model)
+  - Cross-validated AUC of each outcome model: 1 = perfect ranking, 0.5 = chance
+  - Models: delete, archive (a model appears once the worker has trained it)
+
+- **`movie_thumbnailer_ml_brier`** (Gauge with label: model)
+  - Brier score of each model's calibrated probabilities (lower is better)
+  - Models: delete, archive
+
+- **`movie_thumbnailer_ml_live_auc`** (Gauge)
+  - AUC of the delete scores shown at decision time on the recent slideshow decisions; 0 until there are enough
+
+- **`movie_thumbnailer_ml_embedded_movies`** (Gauge)
+  - Movies with an embedding from the model the worker last trained with
+
+- **`movie_thumbnailer_ml_scored_movies`** (Gauge)
+  - Movies with a current score
+
 ## Usage Examples
 
 ### Monitoring Dashboard Queries
@@ -139,6 +163,11 @@ increase(movie_thumbnailer_scan_operations_total{result="error"}[1h]) > 0
 **Stale Scan Alert:**
 ```promql
 time() - movie_thumbnailer_last_scan_timestamp > 3600
+```
+
+**Stale Preference Model Alert** (the worker runs every 15 minutes):
+```promql
+time() - movie_thumbnailer_ml_trained_timestamp_seconds > 2 * 3600
 ```
 
 **High Error Rate Alert:**

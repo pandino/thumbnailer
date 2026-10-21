@@ -1,8 +1,10 @@
 package metrics
 
 import (
+	"strconv"
 	"time"
 
+	"github.com/pandino/movie-thumbnailer-go/internal/models"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -43,7 +45,18 @@ type Metrics struct {
 	// Cleanup metrics
 	CleanupDeletedMoviesTotal *prometheus.CounterVec
 	CleanupDeletedMoviesSize  *prometheus.CounterVec
+
+	// Preference model metrics, from what the worker last reported (ml_meta) and the database
+	MLTrainedTimestamp prometheus.Gauge
+	MLCVAUC            *prometheus.GaugeVec
+	MLBrier            *prometheus.GaugeVec
+	MLLiveAUC          prometheus.Gauge
+	MLEmbedded         prometheus.Gauge
+	MLScored           prometheus.Gauge
 }
+
+// Outcome models trained by the worker; their ml_meta keys are auc_<model> and brier_<model>
+var mlModels = []string{"delete", "archive"}
 
 // New creates and registers all Prometheus metrics
 func New() *Metrics {
@@ -194,6 +207,46 @@ func New() *Metrics {
 			},
 			[]string{"operation_type"},
 		),
+
+		// Preference model metrics
+		MLTrainedTimestamp: promauto.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "movie_thumbnailer_ml_trained_timestamp_seconds",
+				Help: "Unix time the preference model was last trained (0 = never)",
+			},
+		),
+		MLCVAUC: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "movie_thumbnailer_ml_cv_auc",
+				Help: "Cross-validated AUC of each outcome model (1 = perfect ranking, 0.5 = chance)",
+			},
+			[]string{"model"},
+		),
+		MLBrier: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "movie_thumbnailer_ml_brier",
+				Help: "Brier score of each outcome model's calibrated probabilities (lower is better)",
+			},
+			[]string{"model"},
+		),
+		MLLiveAUC: promauto.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "movie_thumbnailer_ml_live_auc",
+				Help: "AUC of the delete scores shown at decision time on recent slideshow decisions (0 = not enough decisions)",
+			},
+		),
+		MLEmbedded: promauto.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "movie_thumbnailer_ml_embedded_movies",
+				Help: "Movies with an embedding from the model the worker last trained with",
+			},
+		),
+		MLScored: promauto.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "movie_thumbnailer_ml_scored_movies",
+				Help: "Movies with a current score",
+			},
+		),
 	}
 }
 
@@ -270,4 +323,36 @@ func (m *Metrics) UpdateFileSizes(viewedSize, unviewedSize int64) {
 func (m *Metrics) RecordCleanupDeletedMovie(operationType string, fileSize int64) {
 	m.CleanupDeletedMoviesTotal.WithLabelValues(operationType).Inc()
 	m.CleanupDeletedMoviesSize.WithLabelValues(operationType).Add(float64(fileSize))
+}
+
+// UpdateModelStatus updates the preference model metrics. Per-model values the worker didn't
+// report (a model not trained yet) are removed rather than left at their last value.
+func (m *Metrics) UpdateModelStatus(status *models.MLStatus) {
+	m.MLTrainedTimestamp.Set(float64(TrainedUnix(status.Meta["trained_at"])))
+	for _, model := range mlModels {
+		setOrDelete(m.MLCVAUC, model, status.Meta["auc_"+model])
+		setOrDelete(m.MLBrier, model, status.Meta["brier_"+model])
+	}
+	m.MLLiveAUC.Set(status.LiveAUC)
+	m.MLEmbedded.Set(float64(status.Embedded))
+	m.MLScored.Set(float64(status.Scored))
+}
+
+func setOrDelete(gauge *prometheus.GaugeVec, label, value string) {
+	if v, err := strconv.ParseFloat(value, 64); err == nil {
+		gauge.WithLabelValues(label).Set(v)
+	} else {
+		gauge.DeleteLabelValues(label)
+	}
+}
+
+// TrainedUnix converts the worker's trained_at ("2006-01-02 15:04", the worker's local time) to
+// Unix seconds, or 0 if it is missing or malformed. The worker and the server both run with
+// TZ=Europe/Zurich, so the server's local time zone is the worker's.
+func TrainedUnix(trainedAt string) int64 {
+	t, err := time.ParseInLocation("2006-01-02 15:04", trainedAt, time.Local)
+	if err != nil {
+		return 0
+	}
+	return t.Unix()
 }
