@@ -10,6 +10,7 @@ vars:
   BUILD_ARGS: --build-arg VERSION={{.VERSION}} --build-arg COMMIT={{.COMMIT}} --build-arg BUILD_DATE="{{.BUILD_DATE}}"
   APP_NAME: thumbnailer
   IMAGE_NAME: docker.io/pandino/{{.APP_NAME}}
+  TASTE_IMAGE_NAME: docker.io/pandino/{{.APP_NAME}}-taste
 
 tasks:
   default:
@@ -82,4 +83,36 @@ tasks:
           else
             echo "Publish developer image only"
             podman push {{.IMAGE_NAME}}:debug
+          fi
+
+  taste-build:
+    desc: Build the preference-model worker image (scripts/taste)
+    vars:
+      TAG_ARGS: --tag {{.TASTE_IMAGE_NAME}}:{{.VERSION}} --tag {{.TASTE_IMAGE_NAME}}:latest --tag {{.TASTE_IMAGE_NAME}}:debug
+    cmds:
+      - echo "Building worker container with version {{.VERSION}}, commit {{.COMMIT}}"
+      - podman build {{.BUILD_ARGS}} {{.TAG_ARGS}} scripts/taste
+
+  taste-publish:
+    desc: Publish the preference-model worker image to Docker Hub
+    deps: [taste-build]
+    vars:
+      IS_MAIN:
+        sh: git branch --show-current | grep -q '^main$' && echo "true" || echo "false"
+      TAG:
+        sh: git describe --exact-match --tags 2>/dev/null || echo ""
+      IS_DIRTY:
+        sh: git diff --quiet || echo "true"
+    cmds:
+      - cmd: |
+          if [ -n "{{.TAG}}" ] && [ -z "{{.IS_DIRTY}}" ]; then
+            echo "Publishing versioned image {{.TASTE_IMAGE_NAME}}:{{.VERSION}}"
+            podman push {{.TASTE_IMAGE_NAME}}:{{.VERSION}}
+            podman push {{.TASTE_IMAGE_NAME}}:latest
+          elif [ "{{.IS_MAIN}}" = "true" ]; then
+            echo "On main branch, publishing latest image"
+            podman push {{.TASTE_IMAGE_NAME}}:latest
+          else
+            echo "Publish developer image only"
+            podman push {{.TASTE_IMAGE_NAME}}:debug
           fi

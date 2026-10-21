@@ -142,6 +142,56 @@ class CalibrationTest(unittest.TestCase):
         self.assertTrue(np.all(np.diff(p[np.argsort(raw)]) >= -1e-12))
 
 
+class RunEveryTest(unittest.TestCase):
+    class FakeWorker:
+        def __init__(self, outcomes, stop_after):
+            self.outcomes = list(outcomes)
+            self.stop_after = stop_after
+            self.runs = 0
+            self.stop = False
+
+        def run(self):
+            self.runs += 1
+            outcome = self.outcomes.pop(0) if self.outcomes else None
+            if isinstance(outcome, Exception):
+                raise outcome
+            return 0
+
+    def test_option(self):
+        self.assertEqual(taste.parse_args(["--server", "http://x"]).every, 0)
+        self.assertEqual(taste.parse_args(["--server", "http://x", "--every", "15"]).every, 15)
+        with self.assertRaises(SystemExit):
+            taste.parse_args(["--server", "http://x", "--every", "-1"])
+
+    def test_keeps_running_after_failures_until_stopped(self):
+        worker = self.FakeWorker([taste.urllib.error.URLError("down"), RuntimeError("bad"), None], 3)
+        waits = []
+
+        def wait(w, seconds):
+            waits.append(seconds)
+            if w.runs >= w.stop_after:
+                w.stop = True
+
+        with self.assertLogs("taste", level="ERROR"):
+            self.assertEqual(taste.run_every(worker, 15, wait), 0)
+        self.assertEqual(worker.runs, 3)
+        self.assertEqual(waits, [900, 900, 900])
+
+    def test_stop_during_run_skips_the_wait(self):
+        worker = self.FakeWorker([], 1)
+        worker.run = lambda: setattr(worker, "stop", True)
+        waits = []
+        taste.run_every(worker, 15, lambda w, s: waits.append(s))
+        self.assertEqual(waits, [])
+
+    def test_sleep_wakes_when_stopped(self):
+        worker = self.FakeWorker([], 1)
+        worker.stop = True
+        start = taste.time.monotonic()
+        taste.sleep_unless_stopped(worker, 60)
+        self.assertLess(taste.time.monotonic() - start, 0.5)
+
+
 class DeviceTest(unittest.TestCase):
     def test_resolve_device(self):
         self.assertEqual(taste.resolve_device("cpu", True), "cpu")

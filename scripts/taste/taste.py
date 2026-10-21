@@ -367,6 +367,9 @@ class Worker:
         # Embeddings are only comparable when made the same way, so the frame count is part of the key
         self.model_key = f"{args.arch}/{args.pretrained}/f{args.max_frames}"
         self.stop = False
+        # True while grids are being embedded: a stop request then finishes the current grid and
+        # uploads the batch; at any other time nothing is lost by exiting at once
+        self.embedding = False
 
     def embed_missing(self):
         """Embed grids without an embedding until done, stopped or out of time."""
@@ -382,9 +385,16 @@ class Worker:
             return 0
         log.info("%d grids to embed", len(pending))
 
+        embedder = Embedder(self.args.arch, self.args.pretrained, self.args.threads, self.args.device)
+        self.embedding = True
+        try:
+            return self._embed(embedder, pending, deadline)
+        finally:
+            self.embedding = False
+
+    def _embed(self, embedder, pending, deadline):
         from PIL import Image
 
-        embedder = Embedder(self.args.arch, self.args.pretrained, self.args.threads, self.args.device)
         batch, done, failed, missing = [], 0, 0, 0
         for item in pending:
             if self.stop or time.monotonic() > deadline:
@@ -473,6 +483,31 @@ class Worker:
         return 1 if failed else 0
 
 
+def sleep_unless_stopped(worker, seconds):
+    """Sleep up to seconds, waking within a second once the worker is asked to stop."""
+    end = time.monotonic() + seconds
+    while not worker.stop and time.monotonic() < end:
+        time.sleep(min(1.0, end - time.monotonic()))
+
+
+def run_every(worker, minutes, wait=sleep_unless_stopped):
+    """Run the worker every few minutes until it is stopped (--every, for a container).
+
+    A failed run is logged and retried on the next cycle: the server is unreachable while it is
+    redeployed, which must not stop the loop.
+    """
+    while True:
+        try:
+            worker.run()
+        except Exception:
+            log.exception("Run failed, retrying in %g min", minutes)
+        if worker.stop:
+            return 0
+        wait(worker, minutes * 60)
+        if worker.stop:
+            return 0
+
+
 # --- CLI -----------------------------------------------------------------------
 
 def parse_args(argv):
@@ -493,6 +528,8 @@ def parse_args(argv):
     p.add_argument("--timeout", type=float, default=60, help="HTTP timeout in seconds (default 60)")
     p.add_argument("--embed-unknown-layout", action="store_true",
                    help="embed grids with an unknown tile layout as whole images (default: skip them)")
+    p.add_argument("--every", type=float, default=0, metavar="MINUTES",
+                   help="keep running, starting a run every MINUTES (default 0: run once and exit)")
     p.add_argument("--no-embed", action="store_true", help="only train and score")
     p.add_argument("--dry-run", action="store_true", help="embed, but only print the scores instead of uploading")
     p.add_argument("--lock", default=os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "thumbnailer-taste.lock"),
@@ -501,11 +538,18 @@ def parse_args(argv):
     args = p.parse_args(argv)
     if not 0 < args.watched_delete_weight <= 1:
         p.error("--watched-delete-weight must be in (0, 1]")
+    if args.every < 0:
+        p.error("--every must not be negative")
     return args
 
 
 def main(argv=None):
     args = parse_args(argv)
+    if args.threads:
+        # numpy/scikit-learn size their thread pools from the host's cores, not from a container's
+        # CPU quota; set before they are first imported
+        for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+            os.environ.setdefault(var, str(args.threads))
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
 
@@ -521,11 +565,17 @@ def main(argv=None):
     def request_stop(signum, frame):
         if worker.stop:
             sys.exit(130)
-        log.info("Stopping after the current grid (Ctrl-C again to abort)")
         worker.stop = True
+        if not worker.embedding:
+            log.info("Stopping")
+            sys.exit(0)
+        log.info("Stopping after the current grid (Ctrl-C again to abort)")
 
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
+    if args.every:
+        log.info("Running every %g min", args.every)
+        return run_every(worker, args.every)
     try:
         return worker.run()
     except urllib.error.URLError as e:

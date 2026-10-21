@@ -26,10 +26,25 @@ The ordering deleted < undecided < archived is modelled with two classifiers ove
 3. **Calibrate.** Balanced weighting ranks well but inflates the probabilities: on production data, movies scored "50–70%" were actually deleted 15% of the time. A Platt scaling fitted on each model's out-of-fold scores maps them to observed frequencies. It is monotonic, so the ranking and the slideshow orders don't change; the Brier scores (lower is better) are reported as `brier_delete` and `brier_archive`. If the two probabilities add up to more than 1 they are scaled down together.
 4. **Score.** All live grids are scored (`p_delete`, `p_archive`) and uploaded, replacing the previous scores. The slideshow badge shows the likelier outcome ("Delete 30%" / "Archive 40%"); "likely delete first" sorts by `p_delete`, "likely archive first" by `p_archive`, and "most uncertain first" puts first the movies whose likeliest outcome is least likely.
 
-## Install
+## Where it runs
+
+In production the worker runs on **shun** (always on; Celeron N5105, 4 cores, no AVX) as the podman container `container-thumbnailer-taste`, deployed with btnet (`host_vars/shun/applications.yaml`). It loops with `--every 15`, so scores stay current whether or not the desktop is on. On shun a grid takes about 14 s to embed (about 9 new movies arrive a day) and a retrain about 40 s.
+
+```bash
+go-task taste-build      # image docker.io/pandino/thumbnailer-taste:<git describe>, built from scripts/taste
+go-task taste-publish    # push it (versioned + latest on a clean tag)
+sudo journalctl -u container-thumbnailer-taste -f   # on shun
+```
+
+The image holds CPU-only torch. The SigLIP weights (1.4 GB) are downloaded on the first run into `/cache`; mount a volume there (`thumbnailer-taste-cache:/cache`) so restarts and image updates don't download them again. `--threads` also caps numpy/scikit-learn threads: they otherwise size their pools from the host's cores, not the container's CPU quota, and a training run went from 3 s to 72 s with `--cpus=3` on a 16-core host. A stop request (SIGTERM) exits at once, except while a grid is being embedded: the worker then finishes that grid and uploads the batch, so give the container a stop timeout of 30 s or more.
+
+## Desktop install (GPU, for one-off jobs)
+
+The desktop can run the same worker on its GPU, e.g. to re-embed everything after changing the model. Don't leave its timer enabled while shun runs the worker: both would upload the same scores.
 
 ```bash
 ./install.sh   # ROCm venv in ~/.local/share/thumbnailer-taste, systemd user timer (boot + every 15 min)
+systemctl --user disable --now thumbnailer-taste.timer   # keep the venv, run by hand instead
 ```
 
 The timer embeds on the GPU (see [GPU](#gpu-amd-rocm)); `install.sh` refuses to install it if torch can't use the GPU.
@@ -54,7 +69,8 @@ journalctl --user -u thumbnailer-taste -f                      # timer runs
 | `--max-frames` | frames per grid, 0 for all 32 (default 16) |
 | `--max-minutes` | time box for embedding (default 20) |
 | `--device` | `cpu` (default), `cuda` (GPU) or `auto` (GPU if usable) |
-| `--threads` | torch CPU threads |
+| `--threads` | CPU threads for torch, numpy and scikit-learn |
+| `--every` | keep running, one run every N minutes (default 0: run once) |
 | `--no-embed`, `--dry-run` | skip embedding / skip uploading scores |
 
 ### GPU (AMD, ROCm)

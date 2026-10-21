@@ -57,13 +57,13 @@ The system is split across machines because the workload varies significantly:
 | Part | Where it runs | What it does |
 |---|---|---|
 | **Thumbnailer server** | `ichinose` (weak CPU, no GPU) | Stores grids, your decisions, and scores; serves the slideshow. |
-| **Worker (`scripts/taste/taste.py`)** | Desktop (GPU), or any connected machine | Executes computations: embeds grids, trains models, scores movies. |
+| **Worker (`scripts/taste/taste.py`)** | `shun` (always-on Celeron N5105), as a podman container | Executes computations: embeds grids, trains models, scores movies. |
 | **User** | Slideshow + MPV | Generates decisions that serve as new training data. |
 
 ### The Execution Loop
 
 1. A new movie arrives, and the server generates its thumbnail grid.
-2. The worker, triggered by a systemd user timer (`thumbnailer-taste.timer`) every 15 minutes on the desktop, identifies un-embedded grids.
+2. The worker, running in the container `container-thumbnailer-taste` on `shun` and waking every 15 minutes (`--every 15`), identifies un-embedded grids.
 3. The worker downloads new grids, extracts 16 representative frame vectors, averages them into an embedding vector (§4–5), and uploads the result.
 4. The worker fetches **all** stored embeddings and decision logs, retrains both classification models from scratch, and computes scores for all undecided items.
 5. Uploaded scores populate badges and sorting options in the slideshow UI.
@@ -77,7 +77,7 @@ Execution is handled by `scripts/taste/taste.py` using internal server endpoints
   - Desktop GPU (`RX 6700 XT`, `--device cuda`, `HSA_OVERRIDE_GFX_VERSION=10.3.0`): **~0.16s / grid**
   - Desktop CPU (`Ryzen 7 5700X3D`): **~1.3s / grid**
   - Low-power node (`shun`, Celeron N5105, 4 cores, no AVX): **~14s / grid**
-- **Retraining & Scoring:** Retraining both models and scoring all ~2,170 movies takes ~40 seconds. Embeddings across desktop and CPU nodes produce identical cosine similarity vectors (`1.0000`).
+- **Retraining & Scoring:** Retraining both models and scoring all ~2,170 movies takes a few seconds to ~40 seconds, depending on the machine. With ~9 new movies a day, `shun` spends a few minutes a day on this. The desktop GPU setup remains available for one-off jobs, such as re-embedding everything after a model change. Embeddings across desktop and CPU nodes produce identical cosine similarity vectors (`1.0000`).
 
 ---
 
