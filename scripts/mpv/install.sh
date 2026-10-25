@@ -124,7 +124,7 @@ echo -e "${BLUE}Usage:${NC}"
 echo "  🎬 Open videos in MPV player"
 echo "  📦 Press 'a' to archive current movie"
 echo "  🗑️  Press 'd' to mark current movie for deletion"
-echo "  ⏭️  Scripts automatically skip to next video on success"
+echo "  ⏭️  Deleting skips to the next video"
 echo
 echo -e "${YELLOW}Note: Make sure Movie Thumbnailer server is running at $HOST:$PORT${NC}"
 echo

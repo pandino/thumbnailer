@@ -1594,6 +1594,9 @@ type VideoStatusResponse struct {
 	Status      string `json:"status,omitempty"`
 	Viewed      bool   `json:"viewed,omitempty"`
 	CreatedAt   string `json:"created_at,omitempty"`
+	// Prediction is the preference model's badge text, e.g. "Delete 87%", empty if unscored
+	Prediction string        `json:"prediction,omitempty"`
+	Score      *models.Score `json:"score,omitempty"`
 }
 
 // handleAPIArchiveVideo marks a video for archival via API
@@ -1796,6 +1799,15 @@ func (s *Server) handleAPIVideoStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	score, err := s.db.GetScore(thumbnail.ID)
+	if err != nil {
+		s.log.WithError(err).WithField("thumbnail_id", thumbnail.ID).Warn("Failed to load thumbnail score")
+	}
+	var prediction string
+	if badge := newScoreBadge(score); badge != nil {
+		prediction = fmt.Sprintf("%s %d%%", badge.Label, badge.Percent)
+	}
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(VideoStatusResponse{
 		Success:     true,
@@ -1804,5 +1816,7 @@ func (s *Server) handleAPIVideoStatus(w http.ResponseWriter, r *http.Request) {
 		Status:      thumbnail.Status,
 		Viewed:      thumbnail.IsViewed(),
 		CreatedAt:   thumbnail.CreatedAt.Format(time.RFC3339),
+		Prediction:  prediction,
+		Score:       score,
 	})
 }

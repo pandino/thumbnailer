@@ -55,7 +55,7 @@ local function handle_response(res, filename)
             msg.info("Successfully archived: " .. filename)
             
             -- Skip to next file after successful archival
-            mp.command("playlist-next")
+            -- mp.command("playlist-next")
         else
             -- Try to extract error message
             local error_msg = response_text:match('"error"%s*:%s*"([^"]*)"')

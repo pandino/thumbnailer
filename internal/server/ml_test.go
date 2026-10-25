@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gorilla/mux"
 	"github.com/pandino/movie-thumbnailer-go/internal/models"
 	"github.com/pandino/movie-thumbnailer-go/internal/scanner"
 )
@@ -245,5 +246,33 @@ func TestScoreBadge(t *testing.T) {
 	}
 	if newScoreBadge(nil) != nil {
 		t.Error("unscored thumbnail got a badge")
+	}
+}
+
+func TestVideoStatusPrediction(t *testing.T) {
+	s, db := newDBTestServer(t)
+	scored := addDBTestThumbnail(t, db, "scored.mp4", 0)
+	addDBTestThumbnail(t, db, "unscored.mp4", 0)
+	pArchive := 0.1
+	db.ReplaceScores([]models.Score{{ThumbnailID: scored.ID, PDelete: 0.87, PArchive: &pArchive}}, nil)
+
+	status := func(filename string) VideoStatusResponse {
+		t.Helper()
+		req := mux.SetURLVars(httptest.NewRequest("GET", "/api/v1/video/status/"+filename, nil), map[string]string{"filename": filename})
+		rr := httptest.NewRecorder()
+		s.handleAPIVideoStatus(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status %s = %d %s", filename, rr.Code, rr.Body.String())
+		}
+		var resp VideoStatusResponse
+		json.NewDecoder(rr.Body).Decode(&resp)
+		return resp
+	}
+
+	if resp := status("scored.mp4"); resp.Prediction != "Delete 87%" || resp.Score == nil || resp.Score.PDelete != 0.87 {
+		t.Errorf("scored = %+v", resp)
+	}
+	if resp := status("unscored.mp4"); resp.Prediction != "" || resp.Score != nil {
+		t.Errorf("unscored = %+v", resp)
 	}
 }

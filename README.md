@@ -214,7 +214,7 @@ cd scripts/mpv
 # Press 'd' to mark current movie for deletion
 ```
 
-The scripts automatically call the API endpoints and skip to the next video in your playlist, providing a seamless workflow for managing large video collections.
+The scripts call the API endpoints, and deleting skips to the next video in your playlist, providing a seamless workflow for managing large video collections.
 
 ## Development
 
