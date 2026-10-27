@@ -51,6 +51,7 @@ type Metrics struct {
 	MLCVAUC            *prometheus.GaugeVec
 	MLBrier            *prometheus.GaugeVec
 	MLLiveAUC          prometheus.Gauge
+	MLLiveAUCArchive   prometheus.Gauge
 	MLEmbedded         prometheus.Gauge
 	MLScored           prometheus.Gauge
 }
@@ -235,6 +236,12 @@ func New() *Metrics {
 				Help: "AUC of the delete scores shown at decision time on recent slideshow decisions (0 = not enough decisions)",
 			},
 		),
+		MLLiveAUCArchive: promauto.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "movie_thumbnailer_ml_live_auc_archive",
+				Help: "AUC of the archive (favorite) scores shown at decision time on recent slideshow and player decisions (0 = not enough decisions)",
+			},
+		),
 		MLEmbedded: promauto.NewGauge(
 			prometheus.GaugeOpts{
 				Name: "movie_thumbnailer_ml_embedded_movies",
@@ -334,6 +341,7 @@ func (m *Metrics) UpdateModelStatus(status *models.MLStatus) {
 		setOrDelete(m.MLBrier, model, status.Meta["brier_"+model])
 	}
 	m.MLLiveAUC.Set(status.LiveAUC)
+	m.MLLiveAUCArchive.Set(status.LiveAUCArchive)
 	m.MLEmbedded.Set(float64(status.Embedded))
 	m.MLScored.Set(float64(status.Scored))
 }

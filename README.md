@@ -143,7 +143,7 @@ The UI uses triage names that differ from the internal ones, which the database,
 | **Pending** | `pending` | Thumbnail not generated yet | The next scan generates it |
 | **Error** | `error` | Thumbnail generation failed | Shown on the control page; retried by a rescan |
 | **New** | `success`, `viewed = 0` | Not triaged yet | Shown in the slideshow |
-| **To Watch** | `success`, `viewed = 1` | Passed in the slideshow (→ / Space): worth watching, not decided yet | Stays in the movies dir and leaves the slideshow. **Reset To Watch** moves all of them back to New |
+| **To Watch** | `success`, `viewed = 1` | Passed in the slideshow (→ / Space): worth watching, not decided yet | Stays in the movies dir and leaves the slideshow. **Reset To Watch** moves all of them back to New and logs an `undo` for their passes, so the model treats them as untriaged again |
 | **Favorites** | `archived` | The best of: marked with ⭐ (`M`) in the slideshow or `a` in MPV | Queued: the next cleanup pass (or **Move Favorites**) copies the file to `ARCHIVE_DIR`, removes the original and drops the row. Moving it there protects it |
 | **Deleted** | `deleted` | Not wanted: 🗑️ (`D`) in the slideshow or `d` in MPV | Queued: the next cleanup pass (or **Process Deletions**) deletes the file and drops the row. Never processed while `DISABLE_DELETION=true` |
 
@@ -160,7 +160,7 @@ The application provides two main pages:
 - **Thumbnail Lists**: The newest New thumbnails, the deletion queue and errors
 - **Real-time Updates**: Dynamic loading of thumbnail data via JavaScript
 - **Slideshow Launcher**: Continue the current session, or start a new one in random order or ordered by the preference model's scores (`/slideshow?new=true&order=likely-delete|uncertain|likely-keep`)
-- **Preference Model**: Decision counts, scored movies, model quality (cross-validated AUC) and live AUC on your recent decisions
+- **Preference Model**: Decision counts, scored movies, model quality (cross-validated AUC) and the live delete and favorite AUCs on your recent decisions
 
 ### Slideshow Page (/slideshow)
 - Displays thumbnails in a fullscreen slideshow view
@@ -200,13 +200,13 @@ Preference model worker (see below):
 
 - `GET /api/v1/ml/items` - Live and decided grids with their tile layout. `missing_model=<key>` lists only grids without an embedding for that model; paged with `after_id`/`limit` (max 1000).
 - `GET /api/v1/ml/embeddings?model=<key>` / `PUT /api/v1/ml/embeddings` - Read or store embeddings: `{"model", "embeddings": [{"id", "vector"}]}`
-- `GET /api/v1/ml/decisions` - The decision log: `{"id", "thumbnail_id", "movie_filename", "stage", "action", "source", "p_delete_at_decision", "created_at"}`
+- `GET /api/v1/ml/decisions` - The decision log: `{"id", "thumbnail_id", "movie_filename", "stage", "action", "source", "p_delete_at_decision", "p_archive_at_decision", "created_at"}`
 - `PUT /api/v1/ml/scores` - Replace all scores: `{"scores": [{"id", "p_delete", "p_archive"}], "meta": {...}}`
-- `GET /api/v1/ml/status` - Decision counts, embedding/score coverage, model status and live AUC (how well the scores shown at decision time ranked your last 300 slideshow decisions)
+- `GET /api/v1/ml/status` - Decision counts, embedding/score coverage, model status and the live AUCs: how well the scores shown at decision time ranked your last 300 slideshow decisions (`live_auc`, delete) and your last 300 slideshow and MPV decisions (`live_auc_archive`, favorite)
 
 ## Preference Model
 
-The app learns which movies you end up deleting and which you end up favoriting. Every decision is logged: in the slideshow, delete (`D`), pass (moving on puts the movie in To Watch: undecided, to watch first) and favorite (`M`, logged as `archive`); in MPV, favorite and delete after watching. Undo cancels the logged decision. Grids of deleted and archived movies are kept in `thumbnails/decided/` as training history.
+The app learns which movies you end up deleting and which you end up favoriting. Every decision is logged: in the slideshow, delete (`D`), pass (moving on puts the movie in To Watch: undecided, to watch first) and favorite (`M`, logged as `archive`); in MPV, favorite and delete after watching. Undo cancels the logged decision; **Reset To Watch** logs an undo for every pass it reverts, and restoring a movie from the deletion queue undoes its delete (slideshow or MPV) and any pass under it. The migration at startup fixes what older resets and restores left behind. Each decision records the delete and favorite scores shown at that moment, for the live AUCs on the control page. Grids of deleted and archived movies are kept in `thumbnails/decided/` as training history.
 
 `scripts/taste/` runs on a desktop machine: it embeds the grid frames with a SigLIP 2 image model on the CPU, learns the final outcome of each movie (deleted < to watch < favorite) and uploads its chances of ending up deleted and favorited. The slideshow shows the likelier one as a badge ("Delete 30%" / "Favorite 40%"), and the control page can start a slideshow ordered by likely delete, most uncertain (teaches the model fastest) or likely favorite. See `scripts/taste/README.md`.
 

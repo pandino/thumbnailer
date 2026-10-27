@@ -273,13 +273,15 @@ Metrics are evaluated using 5-fold cross-validation to prevent training set leak
 
 The system logs the exact $p_{\text{delete}}$ shown on screen whenever a decision is made. A rolling window of up to 300 live slideshow decisions evaluates actual performance against displayed probabilities. 
 
+A second live check covers favorites. Every decision also logs the $p_{\text{archive}}$ shown at that moment (since v0.14.0, so it starts empty), and the last 300 decisions from both the slideshow and MPV, where nearly all favorites are made, are ranked: favorites against deleted movies and movies still To Watch. A pass later followed by a delete or favorite is left out, because its outcome is that later decision.
+
 Currently, live AUC sits at **~0.75**. This is lower than the cross-validated 0.88, primarily because older decisions in the evaluation window were scored by earlier model iterations trained on smaller datasets. Historical predictions can be filtered by model version (`model_version`) on the control page to evaluate current model performance independently.
 
 ---
 
 ## 11. How the scores are used in the slideshow
 
-- **Badge Display:** Displays the likeliest outcome capped at 99% (e.g., "Delete 72%" or "Archive 26%") to prevent false certainty.
+- **Badge Display:** Displays the likeliest outcome capped at 99% (e.g., "Delete 72%" or "Favorite 26%") to prevent false certainty.
 - **Sorting Modes:**
   - *Likely delete first:* Sorts by descending $p_{\text{delete}}$.
   - *Likely archive first:* Sorts by descending $p_{\text{archive}}$.

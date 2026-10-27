@@ -11,6 +11,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pandino/movie-thumbnailer-go/internal/config"
+	"github.com/pandino/movie-thumbnailer-go/internal/database"
 )
 
 func main() {
@@ -24,7 +25,8 @@ func main() {
 		fmt.Println("This utility:")
 		fmt.Println("  1. Adds the file_size column if it doesn't exist")
 		fmt.Println("  2. Scans existing records and populates file_size for movies that exist")
-		fmt.Println("  3. Uses the same configuration as the web app")
+		fmt.Println("  3. Undoes the deletes and passes old resets and restores left on New thumbnails")
+		fmt.Println("  4. Uses the same configuration as the web app")
 		fmt.Println("\nIf -db is not specified, uses the same database path as the web app")
 		flag.PrintDefaults()
 		os.Exit(0)
@@ -52,7 +54,28 @@ func main() {
 		log.Fatalf("Migration failed: %v", err)
 	}
 
+	if err := undoStaleDecisions(databasePath); err != nil {
+		log.Fatalf("Failed to undo stale decisions: %v", err)
+	}
+
 	log.Println("Migration completed successfully")
+}
+
+// undoStaleDecisions logs an undo for the deletes and passes that older resets and restores
+// left standing on New thumbnails, so the preference model sees them as undecided
+func undoStaleDecisions(dbPath string) error {
+	db, err := database.New(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	undone, err := db.UndoStaleDecisions()
+	if err != nil {
+		return err
+	}
+	log.Printf("Undid %d stale decisions on New thumbnails", undone)
+	return nil
 }
 
 func ensureFileSizeColumn(dbPath string) error {

@@ -113,6 +113,9 @@ Refreshed every 30 seconds from what the worker (`scripts/taste`) last uploaded 
 - **`movie_thumbnailer_ml_live_auc`** (Gauge)
   - AUC of the delete scores shown at decision time on the recent slideshow decisions; 0 until there are enough
 
+- **`movie_thumbnailer_ml_live_auc_archive`** (Gauge)
+  - AUC of the archive (favorite) scores shown at decision time on the recent slideshow and MPV decisions: favorites against deleted and still To Watch movies; 0 until there are enough
+
 - **`movie_thumbnailer_ml_embedded_movies`** (Gauge)
   - Movies with an embedding from the model the worker last trained with
 

@@ -77,14 +77,16 @@ const (
 
 // Decision is one entry of the append-only decision log used to train the preference model
 type Decision struct {
-	ID                int64     `json:"id"`
-	ThumbnailID       int64     `json:"thumbnail_id"`
-	MovieFilename     string    `json:"movie_filename"`
-	Stage             string    `json:"stage"`
-	Action            string    `json:"action"`
-	Source            string    `json:"source"`
-	PDeleteAtDecision *float64  `json:"p_delete_at_decision,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
+	ID                int64    `json:"id"`
+	ThumbnailID       int64    `json:"thumbnail_id"`
+	MovieFilename     string   `json:"movie_filename"`
+	Stage             string   `json:"stage"`
+	Action            string   `json:"action"`
+	Source            string   `json:"source"`
+	PDeleteAtDecision *float64 `json:"p_delete_at_decision,omitempty"`
+	// PArchiveAtDecision is the favorite score at decision time, nil for older decisions
+	PArchiveAtDecision *float64  `json:"p_archive_at_decision,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 // GridGeometry describes the tile layout of a thumbnail grid, so single frames can be cropped
@@ -158,6 +160,10 @@ type MLStatus struct {
 	// deleted movie scored above every kept one, 0.5 = chance); 0 until enough decisions
 	LiveAUC          float64 `json:"live_auc"`
 	LiveAUCDecisions int     `json:"live_auc_decisions"`
+	// LiveAUCArchive is the same for favorites, on decisions of both stages: how well the
+	// archive scores ranked favorited movies above deleted and To Watch ones
+	LiveAUCArchive          float64 `json:"live_auc_archive"`
+	LiveAUCArchiveDecisions int     `json:"live_auc_archive_decisions"`
 }
 
 // ValidStatus checks if a status value is valid

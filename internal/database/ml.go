@@ -10,8 +10,9 @@ import (
 	"github.com/pandino/movie-thumbnailer-go/internal/models"
 )
 
-// initMLSchema creates the tables behind the preference model. None of them are touched by
-// cleanup or reset-views: decisions and kept grids are the training history.
+// initMLSchema creates the tables behind the preference model. Cleanup and reset-views never
+// remove anything from them (reset-views only appends undos): decisions and kept grids are the
+// training history.
 func initMLSchema(db *sql.DB) error {
 	_, err := db.Exec(`
 		-- Append-only log of user decisions (see models.Stage*/Action*)
@@ -23,6 +24,7 @@ func initMLSchema(db *sql.DB) error {
 			action TEXT NOT NULL,
 			source TEXT NOT NULL DEFAULT 'live',
 			p_delete_at_decision REAL,
+			p_archive_at_decision REAL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX IF NOT EXISTS idx_decisions_thumbnail ON decisions(thumbnail_id);
@@ -74,16 +76,31 @@ func initMLSchema(db *sql.DB) error {
 			value TEXT NOT NULL
 		);
 	`)
+	if err != nil {
+		return err
+	}
+	return addColumnIfMissing(db, "decisions", "p_archive_at_decision", "REAL")
+}
+
+// addColumnIfMissing adds a column to a table created before the column existed
+func addColumnIfMissing(db *sql.DB, table, column, definition string) error {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?", table, column).Scan(&count)
+	if err != nil || count > 0 {
+		return err
+	}
+	_, err = db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition))
 	return err
 }
 
-// recordDecision appends a decision for a live thumbnail, copying its current p_delete so the
+// recordDecision appends a decision for a live thumbnail, copying its current scores so the
 // model's ranking of the user's decisions can be measured later (live AUC)
 func recordDecision(tx *sql.Tx, id int64, stage, action, source string) error {
 	_, err := tx.Exec(`
-		INSERT INTO decisions (thumbnail_id, movie_filename, stage, action, source, p_delete_at_decision)
-		SELECT t.id, t.movie_filename, ?, ?, ?, (SELECT p_delete FROM scores WHERE thumbnail_id = t.id)
+		INSERT INTO decisions (thumbnail_id, movie_filename, stage, action, source, p_delete_at_decision, p_archive_at_decision)
+		SELECT t.id, t.movie_filename, ?, ?, ?, s.p_delete, s.p_archive
 		FROM thumbnails t
+		LEFT JOIN scores s ON s.thumbnail_id = t.id
 		WHERE t.id = ?`,
 		stage, action, source, id,
 	)
@@ -350,7 +367,8 @@ func (d *DB) ListEmbeddings(model string, afterID int64, limit int) ([]models.Em
 // ListDecisions returns the decision log ordered by ID for cursor paging
 func (d *DB) ListDecisions(afterID int64, limit int) ([]models.Decision, error) {
 	rows, err := d.db.Query(`
-		SELECT id, thumbnail_id, movie_filename, stage, action, source, p_delete_at_decision, created_at
+		SELECT id, thumbnail_id, movie_filename, stage, action, source, p_delete_at_decision,
+			p_archive_at_decision, created_at
 		FROM decisions
 		WHERE id > ?
 		ORDER BY id ASC
@@ -365,13 +383,16 @@ func (d *DB) ListDecisions(afterID int64, limit int) ([]models.Decision, error) 
 	decisions := []models.Decision{}
 	for rows.Next() {
 		var dec models.Decision
-		var p sql.NullFloat64
+		var pDelete, pArchive sql.NullFloat64
 		if err := rows.Scan(&dec.ID, &dec.ThumbnailID, &dec.MovieFilename, &dec.Stage, &dec.Action,
-			&dec.Source, &p, &dec.CreatedAt); err != nil {
+			&dec.Source, &pDelete, &pArchive, &dec.CreatedAt); err != nil {
 			return nil, err
 		}
-		if p.Valid {
-			dec.PDeleteAtDecision = &p.Float64
+		if pDelete.Valid {
+			dec.PDeleteAtDecision = &pDelete.Float64
+		}
+		if pArchive.Valid {
+			dec.PArchiveAtDecision = &pArchive.Float64
 		}
 		decisions = append(decisions, dec)
 	}
@@ -429,8 +450,8 @@ func (d *DB) GetScore(id int64) (*models.Score, error) {
 	return s, nil
 }
 
-// liveAUCWindow is how many recent scored slideshow decisions the live AUC covers, and
-// liveAUCMinPerClass how many deletes and keeps it needs before it is reported
+// liveAUCWindow is how many recent scored decisions each live AUC covers, and
+// liveAUCMinPerClass how many positives and negatives it needs before it is reported
 const (
 	liveAUCWindow      = 300
 	liveAUCMinPerClass = 5
@@ -496,12 +517,13 @@ func (d *DB) GetMLStatus() (*models.MLStatus, error) {
 }
 
 // liveAUC measures how well the scores shown at decision time ranked the user's recent
-// slideshow decisions: the probability that a deleted movie had a higher delete score than a
-// kept (passed or archived) one. Being rank-based, it is unaffected by how the scores were
-// calibrated. Decisions that were later undone are left out.
+// decisions. Decisions that were later undone are left out. Being rank-based, neither AUC is
+// affected by how the scores were calibrated.
 func (d *DB) liveAUC(status *models.MLStatus) error {
-	rows, err := d.db.Query(`
-		SELECT p_delete_at_decision, action
+	// Delete: on slideshow decisions, the probability that a deleted movie had a higher delete
+	// score than a kept (passed or archived) one
+	deleted, kept, err := d.recentScoredDecisions(`
+		SELECT p_delete_at_decision, action = ?
 		FROM decisions dec
 		WHERE stage = ? AND action IN (?, ?, ?) AND p_delete_at_decision IS NOT NULL
 		AND NOT EXISTS (
@@ -510,48 +532,84 @@ func (d *DB) liveAUC(status *models.MLStatus) error {
 		)
 		ORDER BY id DESC
 		LIMIT ?`,
-		models.StageSlideshow, models.ActionDelete, models.ActionPass, models.ActionArchive,
+		models.ActionDelete, models.StageSlideshow, models.ActionDelete, models.ActionPass, models.ActionArchive,
 		models.ActionUndo, liveAUCWindow,
 	)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	status.LiveAUC, status.LiveAUCDecisions = auc(deleted, kept)
 
-	var deleted, kept []float64
-	for rows.Next() {
-		var p float64
-		var action string
-		if err := rows.Scan(&p, &action); err != nil {
-			return err
-		}
-		if action == models.ActionDelete {
-			deleted = append(deleted, p)
-		} else {
-			kept = append(kept, p)
-		}
-	}
-	if err := rows.Err(); err != nil {
+	// Favorite: on decisions of both stages (favorites are mostly made after watching), the
+	// probability that a favorited movie had a higher archive score than one deleted or still
+	// To Watch. A pass followed by a delete or favorite is left out: its outcome is that later
+	// decision, which counts on its own.
+	favorites, others, err := d.recentScoredDecisions(`
+		SELECT p_archive_at_decision, action = ?
+		FROM decisions dec
+		WHERE action IN (?, ?, ?) AND p_archive_at_decision IS NOT NULL
+		AND NOT EXISTS (
+			SELECT 1 FROM decisions u
+			WHERE u.thumbnail_id = dec.thumbnail_id AND u.stage = dec.stage AND u.action = ? AND u.id > dec.id
+		)
+		AND NOT (dec.action = ? AND EXISTS (
+			SELECT 1 FROM decisions f
+			WHERE f.thumbnail_id = dec.thumbnail_id AND f.action IN (?, ?) AND f.id > dec.id
+		))
+		ORDER BY id DESC
+		LIMIT ?`,
+		models.ActionArchive, models.ActionDelete, models.ActionPass, models.ActionArchive,
+		models.ActionUndo, models.ActionPass, models.ActionDelete, models.ActionArchive, liveAUCWindow,
+	)
+	if err != nil {
 		return err
 	}
-	if len(deleted) < liveAUCMinPerClass || len(kept) < liveAUCMinPerClass {
-		return nil
-	}
+	status.LiveAUCArchive, status.LiveAUCArchiveDecisions = auc(favorites, others)
+	return nil
+}
 
+// recentScoredDecisions runs a query returning (score, is positive) rows and splits the scores
+// into positives and negatives
+func (d *DB) recentScoredDecisions(query string, args ...interface{}) (positives, negatives []float64, err error) {
+	rows, err := d.db.Query(query, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var p float64
+		var positive bool
+		if err := rows.Scan(&p, &positive); err != nil {
+			return nil, nil, err
+		}
+		if positive {
+			positives = append(positives, p)
+		} else {
+			negatives = append(negatives, p)
+		}
+	}
+	return positives, negatives, rows.Err()
+}
+
+// auc returns the probability that a positive scored higher than a negative (ties count half)
+// and how many decisions it covers, or 0, 0 with fewer than liveAUCMinPerClass of either
+func auc(positives, negatives []float64) (float64, int) {
+	if len(positives) < liveAUCMinPerClass || len(negatives) < liveAUCMinPerClass {
+		return 0, 0
+	}
 	var wins float64
-	for _, pd := range deleted {
-		for _, pk := range kept {
+	for _, pp := range positives {
+		for _, pn := range negatives {
 			switch {
-			case pd > pk:
+			case pp > pn:
 				wins++
-			case pd == pk:
+			case pp == pn:
 				wins += 0.5
 			}
 		}
 	}
-	status.LiveAUC = wins / float64(len(deleted)*len(kept))
-	status.LiveAUCDecisions = len(deleted) + len(kept)
-	return nil
+	return wins / float64(len(positives)*len(negatives)), len(positives) + len(negatives)
 }
 
 // encodeVector stores a float32 vector as little-endian bytes

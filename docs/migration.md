@@ -73,3 +73,14 @@ ALTER TABLE thumbnails ADD COLUMN file_size INTEGER DEFAULT 0;
 ```
 
 For new installations, the column is included in the initial schema, so no migration is needed.
+
+## Stale decisions (v0.14.0)
+
+Two pre-v0.14.0 bugs left decisions standing on movies that are back in New, so the preference model still counted them as To Watch or deleted:
+
+- **Reset Views** (now **Reset To Watch**) moved To Watch movies back to New without logging anything, so their slideshow `pass` stayed.
+- **Restore** from the deletion queue always logged a slideshow `undo`. For a movie deleted in MPV that cancelled its slideshow pass instead of the player `delete`.
+
+On every startup the migration calls `DB.UndoStaleDecisions`. It replays, stage by stage, the decisions of each New (`success`, `viewed = 0`) thumbnail and logs an `undo` (source `backfill`) for every delete and then every pass still standing. It is idempotent: once they are undone it logs `Undid 0 stale decisions on New thumbnails`. Reset To Watch and restore now log the right undos themselves.
+
+The application schema also gains `decisions.p_archive_at_decision`, added in place by `initMLSchema` when it's missing.

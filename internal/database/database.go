@@ -741,9 +741,20 @@ func (d *DB) GetAllThumbnails() ([]*models.Thumbnail, error) {
 	return scanThumbnails(rows)
 }
 
-// ResetViewedStatus resets the viewed status of all thumbnails
+// ResetViewedStatus moves every To Watch (viewed) thumbnail back to New. The slideshow passes
+// that put them there are undone in the decision log, in the same transaction, so the model
+// sees them as undecided again instead of as To Watch.
 func (d *DB) ResetViewedStatus() (int64, error) {
-	result, err := d.db.Exec(`
+	tx, err := d.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	if _, err := undoStanding(tx, "SELECT id FROM thumbnails WHERE viewed = 1", nil, models.ActionPass, models.DecisionLive); err != nil {
+		return 0, err
+	}
+	result, err := tx.Exec(`
 		UPDATE thumbnails 
 		SET viewed = 0 
 		WHERE viewed = 1`,
@@ -751,7 +762,86 @@ func (d *DB) ResetViewedStatus() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return result.RowsAffected()
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return count, tx.Commit()
+}
+
+// UndoStaleDecisions undoes the deletes and slideshow passes still standing on New thumbnails,
+// returning how many undos it logged. Before v0.14.0, resets moved To Watch movies back to New
+// without undoing their passes, and restores undid a slideshow decision even when the delete
+// was made in the player, so the model still counted those movies as To Watch or deleted.
+// Idempotent.
+func (d *DB) UndoStaleDecisions() (int, error) {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	undone := 0
+	for _, action := range []string{models.ActionDelete, models.ActionPass} {
+		n, err := undoStanding(tx, "SELECT id FROM thumbnails WHERE status = 'success' AND viewed = 0", nil, action, models.DecisionBackfill)
+		if err != nil {
+			return 0, err
+		}
+		undone += n
+	}
+	return undone, tx.Commit()
+}
+
+// undoStanding replays the decisions of the thumbnails the query selects, stage by stage, and
+// logs an undo with the given source for each decision of the given action still standing on
+// top of a stack (an old reset may have left several passes), returning how many it logged
+func undoStanding(tx *sql.Tx, thumbnails string, args []interface{}, action, source string) (int, error) {
+	rows, err := tx.Query(`
+		SELECT thumbnail_id, stage, action
+		FROM decisions
+		WHERE thumbnail_id IN (`+thumbnails+`)
+		ORDER BY id`,
+		args...,
+	)
+	if err != nil {
+		return 0, err
+	}
+	type key struct {
+		id    int64
+		stage string
+	}
+	stacks := map[key][]string{}
+	for rows.Next() {
+		var k key
+		var a string
+		if err := rows.Scan(&k.id, &k.stage, &a); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		stack := stacks[k]
+		if a == models.ActionUndo {
+			if len(stack) > 0 {
+				stacks[k] = stack[:len(stack)-1]
+			}
+		} else {
+			stacks[k] = append(stack, a)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	undone := 0
+	for k, stack := range stacks {
+		for i := len(stack) - 1; i >= 0 && stack[i] == action; i-- {
+			if err := recordDecision(tx, k.id, k.stage, models.ActionUndo, source); err != nil {
+				return 0, err
+			}
+			undone++
+		}
+	}
+	return undone, nil
 }
 
 // DeleteThumbnail deletes a thumbnail record
@@ -775,15 +865,37 @@ func (d *DB) RestoreFromDeletion(moviePath string) error {
 	return err
 }
 
-// RestoreFromDeletionByID restores a thumbnail from deletion status back to success by ID,
-// recording an undo of the slideshow deletion
+// RestoreFromDeletionByID moves a thumbnail from the deletion queue back to New. Each delete
+// still standing is undone in the stage that made it (slideshow or player), and then any
+// slideshow pass under it, so the model sees the movie as undecided, like the UI.
 func (d *DB) RestoreFromDeletionByID(id int64) error {
-	return d.updateWithDecision(id, `
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(`
         UPDATE thumbnails
         SET status = 'success', viewed = 0
         WHERE id = ? AND status = 'deleted'`,
-		models.StageSlideshow, models.ActionUndo,
+		id,
 	)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected > 0 {
+		for _, action := range []string{models.ActionDelete, models.ActionPass} {
+			if _, err := undoStanding(tx, "SELECT ?", []interface{}{id}, action, models.DecisionLive); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 func (d *DB) GetStats() (*models.Stats, error) {

@@ -119,6 +119,189 @@ func TestDecisionsSurviveCleanup(t *testing.T) {
 	assertDecisions(t, db, queued.ID, "slideshow/delete")
 }
 
+func TestResetViewedUndoesPasses(t *testing.T) {
+	db := newTestDB(t)
+	passed := addTestThumbnail(t, db, "passed.mp4", models.StatusSuccess, 0)
+	twice := addTestThumbnail(t, db, "twice.mp4", models.StatusSuccess, 0)
+	legacy := addTestThumbnail(t, db, "legacy.mp4", models.StatusSuccess, 1)
+	fresh := addTestThumbnail(t, db, "fresh.mp4", models.StatusSuccess, 0)
+
+	db.MarkAsViewedByID(passed.ID)
+	db.MarkForArchival(passed.ID, models.StagePlayer)
+	db.MarkAsViewedByID(fresh.ID)
+	// A pass, a reset from before resets logged undos, and a second pass
+	db.MarkAsViewedByID(twice.ID)
+	if _, err := db.db.Exec("UPDATE thumbnails SET viewed = 0 WHERE id = ?", twice.ID); err != nil {
+		t.Fatal(err)
+	}
+	db.MarkAsViewedByID(twice.ID)
+	// Back to New by an old reset: not To Watch any more, so left alone
+	if _, err := db.db.Exec("UPDATE thumbnails SET viewed = 0 WHERE id = ?", fresh.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := db.ResetViewedStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Errorf("reset %d thumbnails; want 3", count)
+	}
+
+	// The player stage keeps its own decisions
+	assertDecisions(t, db, passed.ID, "slideshow/pass", "player/archive", "slideshow/undo")
+	assertDecisions(t, db, twice.ID, "slideshow/pass", "slideshow/pass", "slideshow/undo", "slideshow/undo")
+	assertDecisions(t, db, legacy.ID)
+	assertDecisions(t, db, fresh.ID, "slideshow/pass")
+
+	// A second reset finds nothing to undo
+	if _, err := db.ResetViewedStatus(); err != nil {
+		t.Fatal(err)
+	}
+	assertDecisions(t, db, twice.ID, "slideshow/pass", "slideshow/pass", "slideshow/undo", "slideshow/undo")
+}
+
+func TestRestoreUndoesEachStage(t *testing.T) {
+	db := newTestDB(t)
+	watched := addTestThumbnail(t, db, "watched.mp4", models.StatusSuccess, 0)
+	both := addTestThumbnail(t, db, "both.mp4", models.StatusSuccess, 0)
+	legacy := addTestThumbnail(t, db, "legacy.mp4", models.StatusDeleted, 0)
+
+	// Passed, then deleted after watching: both are undone
+	db.MarkAsViewedByID(watched.ID)
+	db.MarkForDeletion(watched.ID, models.StagePlayer)
+	// Deleted in the slideshow and again in the player
+	db.MarkForDeletionByID(both.ID)
+	db.MarkForDeletion(both.ID, models.StagePlayer)
+
+	for _, id := range []int64{watched.ID, both.ID, legacy.ID} {
+		if err := db.RestoreFromDeletionByID(id); err != nil {
+			t.Fatal(err)
+		}
+		th, err := db.GetByID(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if th.Status != models.StatusSuccess || th.Viewed != 0 {
+			t.Errorf("restored %s is %s/viewed=%d; want success/0", th.MovieFilename, th.Status, th.Viewed)
+		}
+	}
+
+	assertDecisions(t, db, watched.ID, "slideshow/pass", "player/delete", "player/undo", "slideshow/undo")
+	got := decisionsOf(t, db, both.ID)
+	if len(got) != 4 || got[2] == got[3] || got[2][len(got[2])-5:] != "/undo" || got[3][len(got[3])-5:] != "/undo" {
+		t.Errorf("decisions of both = %v; want both deletes undone, one per stage", got)
+	}
+	// Deleted before decisions were logged: nothing to undo
+	assertDecisions(t, db, legacy.ID)
+}
+
+func TestUndoStaleDecisions(t *testing.T) {
+	db := newTestDB(t)
+	stale := addTestThumbnail(t, db, "stale.mp4", models.StatusSuccess, 0)
+	toWatch := addTestThumbnail(t, db, "towatch.mp4", models.StatusSuccess, 0)
+	queued := addTestThumbnail(t, db, "queued.mp4", models.StatusSuccess, 0)
+	restored := addTestThumbnail(t, db, "restored.mp4", models.StatusSuccess, 0)
+	db.MarkAsViewedByID(stale.ID)
+	db.MarkAsViewedByID(toWatch.ID)
+	db.MarkAsViewedByID(queued.ID)
+	db.MarkForDeletion(queued.ID, models.StagePlayer)
+	// An old reset: back to New with the pass still standing
+	if _, err := db.db.Exec("UPDATE thumbnails SET viewed = 0 WHERE id IN (?, ?)", stale.ID, queued.ID); err != nil {
+		t.Fatal(err)
+	}
+	// An old restore of a movie passed, then deleted after watching: it undid the pass
+	db.MarkAsViewedByID(restored.ID)
+	db.MarkForDeletion(restored.ID, models.StagePlayer)
+	if _, err := db.db.Exec("UPDATE thumbnails SET status = 'success', viewed = 0 WHERE id = ?", restored.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`INSERT INTO decisions (thumbnail_id, movie_filename, stage, action)
+		VALUES (?, 'restored.mp4', 'slideshow', 'undo')`, restored.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []int{2, 0} {
+		undone, err := db.UndoStaleDecisions()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if undone != want {
+			t.Errorf("undid %d passes; want %d", undone, want)
+		}
+	}
+	assertDecisions(t, db, stale.ID, "slideshow/pass", "slideshow/undo")
+	all, err := db.ListDecisions(0, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last := all[len(all)-1]; last.Source != models.DecisionBackfill {
+		t.Errorf("undo source = %q; want backfill", last.Source)
+	}
+	assertDecisions(t, db, toWatch.ID, "slideshow/pass")
+	assertDecisions(t, db, restored.ID, "slideshow/pass", "player/delete", "slideshow/undo", "player/undo")
+	assertDecisions(t, db, queued.ID, "slideshow/pass", "player/delete")
+}
+
+func TestMLStatusLiveFavoriteAUC(t *testing.T) {
+	db := newTestDB(t)
+	// Favorites scored 0.6..1.0; deleted and To Watch movies 0.1..0.5: AUC = 1
+	var scores []models.Score
+	var favorites, toWatch, deleted []int64
+	p := func(v float64) *float64 { return &v }
+	for i := 0; i < 5; i++ {
+		f := addTestThumbnail(t, db, fmt.Sprintf("f%d.mp4", i), models.StatusSuccess, 0)
+		o := addTestThumbnail(t, db, fmt.Sprintf("o%d.mp4", i), models.StatusSuccess, 0)
+		scores = append(scores,
+			models.Score{ThumbnailID: f.ID, PDelete: 0.1, PArchive: p(0.6 + 0.1*float64(i))},
+			models.Score{ThumbnailID: o.ID, PDelete: 0.1, PArchive: p(0.1 + 0.1*float64(i))})
+		favorites = append(favorites, f.ID)
+		if i < 3 {
+			toWatch = append(toWatch, o.ID)
+		} else {
+			deleted = append(deleted, o.ID)
+		}
+	}
+	// Scored without an archive probability: left out
+	old := addTestThumbnail(t, db, "old.mp4", models.StatusSuccess, 0)
+	scores = append(scores, models.Score{ThumbnailID: old.ID, PDelete: 0.9})
+	db.ReplaceScores(scores, nil)
+
+	// Favorites are passed in the slideshow first: those passes are superseded, not negatives
+	for _, id := range favorites {
+		db.MarkAsViewedByID(id)
+		db.MarkForArchival(id, models.StagePlayer)
+	}
+	for _, id := range toWatch {
+		db.MarkAsViewedByID(id)
+	}
+	for _, id := range deleted {
+		db.MarkForDeletion(id, models.StagePlayer)
+	}
+	db.MarkForArchival(old.ID, models.StagePlayer)
+
+	status, err := db.GetMLStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LiveAUCArchiveDecisions != 10 || status.LiveAUCArchive != 1 {
+		t.Errorf("live favorite AUC = %v on %d decisions; want 1 on 10",
+			status.LiveAUCArchive, status.LiveAUCArchiveDecisions)
+	}
+
+	all, err := db.ListDecisions(0, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := all[len(all)-1]
+	if last.ThumbnailID != old.ID || last.PArchiveAtDecision != nil || last.PDeleteAtDecision == nil {
+		t.Errorf("unscored archive probability recorded: %+v", last)
+	}
+	if a := all[0].PArchiveAtDecision; a == nil || *a != 0.6 {
+		t.Errorf("p_archive_at_decision = %v; want 0.6", a)
+	}
+}
+
 func TestOrderedSelection(t *testing.T) {
 	db := newTestDB(t)
 	high := addTestThumbnail(t, db, "high.mp4", models.StatusSuccess, 0)

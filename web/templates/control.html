@@ -129,8 +129,15 @@
                     {{if gt .LiveAUCDecisions 0}}
                     <div class="stat-box success">
                         <span class="stat-value">{{printf "%.2f" .LiveAUC}}</span>
-                        <span class="stat-label">Live AUC</span>
-                        <span class="stat-size">on your last {{.LiveAUCDecisions}} scored decisions</span>
+                        <span class="stat-label">Live Delete AUC</span>
+                        <span class="stat-size">on your last {{.LiveAUCDecisions}} scored slideshow decisions</span>
+                    </div>
+                    {{end}}
+                    {{if gt .LiveAUCArchiveDecisions 0}}
+                    <div class="stat-box success">
+                        <span class="stat-value">{{printf "%.2f" .LiveAUCArchive}}</span>
+                        <span class="stat-label">Live Favorite AUC</span>
+                        <span class="stat-size">on your last {{.LiveAUCArchiveDecisions}} scored decisions</span>
                     </div>
                     {{end}}
                 </div>
