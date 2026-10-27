@@ -103,7 +103,7 @@ The enhanced scripts instead read `config.lua` (host, port, OSD durations, auto-
 
 When a file starts playing, the script asks `GET /api/v1/video/status/{filename}` for the preference model's prediction and shows it on the OSD for 4 seconds, in the same form as the slideshow badge: the likelier final outcome and its probability, `Delete 87%` or `Favorite 64%` (`Keep` for scores from before the archive model). Movies the model hasn't scored yet show `Not scored yet`; files that aren't in the database show nothing.
 
-The request runs in the background, so playback never waits for the server. The answer is kept for the current file, so pressing `n` shows it again without asking the server (it fetches it only if the first request failed). To use a different key, rebind it in `input.conf`:
+The request runs in the background, so playback never waits for the server. The answer is kept for the current file, so pressing `Ctrl+F13` shows it again without asking the server (it fetches it only if the first request failed). To use a different key, rebind it in `input.conf`:
 
 ```
 y script-binding show_prediction/show-prediction
@@ -130,6 +130,7 @@ alias xxxmpv='curl -s "http://192.168.1.35:8080/api/thumbnails?status=success&vi
   end
   hl.bind("CTRL + F14", xxxmpv("script-message archive-movie"))
   hl.bind("F15",        xxxmpv("script-message delete-movie"))
+  hl.bind("CTRL + F13", xxxmpv("script-message show-prediction"))
   ```
 
   Don't use Hyprland's `pass` dispatcher for this: it moves keyboard focus to MPV, and the focus switch re-reports the held key, so an unfocused MPV receives each key twice (a delete runs twice, and `CTRL + F14` also arrives as a bare `F14`).

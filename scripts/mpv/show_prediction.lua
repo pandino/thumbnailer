@@ -1,6 +1,6 @@
 -- Show the preference model's prediction for the current movie via Movie Thumbnailer API
 -- Place this file in ~/.config/mpv/scripts/ or your mpv scripts directory
--- Shown automatically when a file starts; press n to show it again (rebind in input.conf: key_name script-binding show_prediction/show-prediction)
+-- Shown automatically when a file starts; press Ctrl+F13 to show it again (rebind in input.conf: key_name script-binding show_prediction/show-prediction)
 
 local msg = require 'mp.msg'
 local utils = require 'mp.utils'
@@ -82,6 +82,6 @@ end
 
 mp.register_event("file-loaded", fetch_prediction)
 mp.register_script_message("show-prediction", show_prediction)
-mp.add_key_binding("n", "show-prediction", show_prediction)
+mp.add_key_binding("Ctrl+F13", "show-prediction", show_prediction)
 
-msg.info("Show prediction script loaded. Press n (or 'script-message show-prediction') to show it again.")
+msg.info("Show prediction script loaded. Press Ctrl+F13 (or 'script-message show-prediction') to show it again.")
