@@ -1,3 +1,5 @@
+> Original spec of the archival feature. The UI now calls archived movies **Favorites** (the best of, moved to `ARCHIVE_DIR` to protect them); the internal name is still `archived`. See *Movie States* in the README.
+
 * Add a new state for the thumbnail object `Archived`.
 * During the slideshow, the shorcut "M" mark the thumbnail as `Archived` and skips to the next thumbnail. When an item is in this state it will not be selected for slideshows.
 * The tagging is compatible with the slideshow undo function as the other marking shortcuts.

@@ -48,12 +48,12 @@
                     </div>
                     <div class="stat-box unviewed">
                         <span class="stat-value">{{.Stats.Unviewed}}</span>
-                        <span class="stat-label">Unviewed</span>
+                        <span class="stat-label">New</span>
                         <span class="stat-size">{{.UnviewedSizeFormatted}}</span>
                     </div>
                     <div class="stat-box viewed">
                         <span class="stat-value">{{.Stats.Viewed}}</span>
-                        <span class="stat-label">Viewed</span>
+                        <span class="stat-label">To Watch</span>
                         <span class="stat-size">{{.ViewedSizeFormatted}}</span>
                     </div>
                     <div class="stat-box" style="background-color: rgba(231, 76, 60, 0.1); border-left: 4px solid #e74c3c;">
@@ -62,7 +62,7 @@
                     </div>
                     <div class="stat-box" style="background-color: rgba(52, 152, 219, 0.1); border-left: 4px solid #3498db;">
                         <span class="stat-value">{{.Stats.Archived}}</span>
-                        <span class="stat-label">Pending Archival</span>
+                        <span class="stat-label">Favorites to Move</span>
                     </div>
                 </div>
             </section>
@@ -78,7 +78,7 @@
                     {{if and .ML (gt .ML.Scored 0)}}
                     <a href="/slideshow?new=true&order=likely-delete" class="start-slideshow ordered" title="Movies the model expects you to delete come first">Likely delete first</a>
                     <a href="/slideshow?new=true&order=uncertain" class="start-slideshow ordered" title="Movies whose final outcome the model is least sure about come first: deciding them teaches it the most">Most uncertain first</a>
-                    <a href="/slideshow?new=true&order=likely-keep" class="start-slideshow ordered" title="Movies the model expects you to end up archiving come first">Likely archive first</a>
+                    <a href="/slideshow?new=true&order=likely-keep" class="start-slideshow ordered" title="Movies the model expects you to end up favoriting come first">Likely favorite first</a>
                     {{end}}
                     {{if and .HasSession (gt .SessionDeletedSize 0)}}
                     <span class="session-deleted-info">Deleted in this session: {{.SessionDeletedSizeFormatted}}</span>
@@ -97,11 +97,11 @@
                     </div>
                     <div class="stat-box viewed">
                         <span class="stat-value">{{index .Decisions "slideshow/pass"}}</span>
-                        <span class="stat-label">Passed in slideshow</span>
+                        <span class="stat-label">To watch from slideshow</span>
                     </div>
                     <div class="stat-box unviewed">
                         <span class="stat-value">{{$.MLArchived}}</span>
-                        <span class="stat-label">Archived</span>
+                        <span class="stat-label">Favorites</span>
                     </div>
                     <div class="stat-box pending">
                         <span class="stat-value">{{index .Decisions "player/delete"}}</span>
@@ -122,7 +122,7 @@
                     {{with index .Meta "auc_archive"}}
                     <div class="stat-box success">
                         <span class="stat-value">{{.}}</span>
-                        <span class="stat-label">Archive AUC</span>
+                        <span class="stat-label">Favorite AUC</span>
                         <span class="stat-size">cross-validated, 1.0 = perfect</span>
                     </div>
                     {{end}}
@@ -156,9 +156,9 @@
                     </form>
 
                     <form action="/reset-views" method="post">
-                        <button type="submit" class="action-button" {{if .IsScanning}}disabled{{end}}>
+                        <button type="submit" class="action-button" title="Move every To Watch movie back to New" {{if .IsScanning}}disabled{{end}}>
                             <span class="action-icon">🔄</span>
-                            <span class="action-label">Reset Views</span>
+                            <span class="action-label">Reset To Watch</span>
                         </button>
                     </form>
                     
@@ -177,13 +177,13 @@
 
                     {{if gt .Stats.Archived 0}}
                     <form action="/process-archival" method="post"
-                          data-confirm-title="Archive {{.Stats.Archived}} file(s)?"
-                          data-confirm-message="This will move the files to the archive directory. This cannot be undone."
-                          data-confirm-label="Archive Files"
+                          data-confirm-title="Move {{.Stats.Archived}} favorite(s)?"
+                          data-confirm-message="This will move the files to the favorites directory. This cannot be undone."
+                          data-confirm-label="Move Favorites"
                           data-confirm-color="#3498db">
                         <button type="submit" class="action-button" {{if .IsScanning}}disabled{{end}} style="background-color: #3498db;">
-                            <span class="action-icon">📦</span>
-                            <span class="action-label">Process Archival ({{.Stats.Archived}})</span>
+                            <span class="action-icon">⭐</span>
+                            <span class="action-label">Move Favorites ({{.Stats.Archived}})</span>
                         </button>
                     </form>
                     {{end}}
@@ -199,7 +199,7 @@
 
             {{if .Stats.Unviewed}}
             <section class="thumbnails-panel">
-                <h2>Recent Unviewed Thumbnails (Showing {{if lt .Stats.Unviewed 10}}{{.Stats.Unviewed}}{{else}}10{{end}} of {{.Stats.Unviewed}})</h2>
+                <h2>New Thumbnails (Showing {{if lt .Stats.Unviewed 10}}{{.Stats.Unviewed}}{{else}}10{{end}} of {{.Stats.Unviewed}})</h2>
                 
                 <div id="unviewed-thumbnails" class="thumbnails-grid">
                     <div class="loading">Loading...</div>

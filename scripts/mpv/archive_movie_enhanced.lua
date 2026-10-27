@@ -25,7 +25,7 @@ else
         show_verbose_logs = false,
         api_timeout = 10,
         icons = {
-            archive = "📦",
+            archive = "⭐",
             success = "✅",
             error = "❌"
         }
@@ -88,7 +88,7 @@ local function handle_response(res, filename)
         end
         
         if response_text:match('"success"%s*:%s*true') then
-            mp.osd_message(success_icon .. " Archived: " .. filename, config.archive_message_duration)
+            mp.osd_message(success_icon .. " Favorited: " .. filename, config.archive_message_duration)
             msg.info("Successfully archived: " .. filename)
             
             -- Skip to next file after successful archival
@@ -99,10 +99,10 @@ local function handle_response(res, filename)
             -- Try to extract error message
             local error_msg = response_text:match('"error"%s*:%s*"([^"]*)"')
             if error_msg then
-                mp.osd_message(error_icon .. " Archive failed: " .. error_msg, config.error_message_duration)
+                mp.osd_message(error_icon .. " Favorite failed: " .. error_msg, config.error_message_duration)
                 msg.error("Archive failed for " .. filename .. ": " .. error_msg)
             else
-                mp.osd_message(error_icon .. " Archive failed: Unknown error", config.error_message_duration)
+                mp.osd_message(error_icon .. " Favorite failed: Unknown error", config.error_message_duration)
                 msg.error("Archive failed for " .. filename .. ": Unknown error")
             end
             
@@ -118,7 +118,7 @@ local function handle_response(res, filename)
             error_msg = "Connection refused"
         end
         
-        mp.osd_message(error_icon .. " Archive failed: " .. error_msg, config.error_message_duration)
+        mp.osd_message(error_icon .. " Favorite failed: " .. error_msg, config.error_message_duration)
         msg.error("Failed to connect to thumbnailer API for " .. filename)
         msg.error("curl exit code: " .. tostring(res.status))
         
@@ -146,7 +146,7 @@ local function archive_current_movie()
         return
     end
     
-    mp.osd_message(config.icons.archive .. " Archiving: " .. filename .. "...", 2)
+    mp.osd_message(config.icons.archive .. " Favoriting: " .. filename .. "...", 2)
     msg.info("Archiving movie: " .. filename)
     
     -- Make the API request

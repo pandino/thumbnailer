@@ -177,7 +177,7 @@ func TestOrderedSlideshowSession(t *testing.T) {
 	db.MarkAsViewedByID(mid.ID)
 	rr = httptest.NewRecorder()
 	s.handleSlideshow(rr, httptest.NewRequest("GET", "/slideshow?new=true&order=likely-keep", nil))
-	if !strings.Contains(rr.Body.String(), "Keep 90%") || !strings.Contains(rr.Body.String(), "likely archive first") {
+	if !strings.Contains(rr.Body.String(), "Keep 90%") || !strings.Contains(rr.Body.String(), "likely favorite first") {
 		t.Errorf("keep badge missing")
 	}
 
@@ -235,9 +235,9 @@ func TestScoreBadge(t *testing.T) {
 		{0.996, nil, "Delete", 99}, // never a rounded 100%
 		{0.002, nil, "Keep", 99},
 		// Final-outcome scores: the likelier of delete and archive
-		{0.1, p(0.4), "Archive", 40},
+		{0.1, p(0.4), "Favorite", 40},
 		{0.3, p(0.1), "Delete", 30},
-		{0.05, p(0.999), "Archive", 99},
+		{0.05, p(0.999), "Favorite", 99},
 	} {
 		b := newScoreBadge(&models.Score{PDelete: tc.pDelete, PArchive: tc.pArchive})
 		if b.Label != tc.label || b.Percent != tc.pct || b.Delete != (tc.label == "Delete") {

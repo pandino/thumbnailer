@@ -21,7 +21,7 @@ return {
     
     -- Custom Icons (can be changed to your preference)
     icons = {
-        archive = "📦",
+        archive = "⭐",
         delete = "🗑️", 
         success = "✅",
         error = "❌"

@@ -75,7 +75,7 @@ func (sd *SessionData) addSkipped(id int64) {
 var orderLabels = map[string]string{
 	models.OrderLikelyDelete: "likely delete first",
 	models.OrderUncertain:    "most uncertain first",
-	models.OrderLikelyKeep:   "likely archive first",
+	models.OrderLikelyKeep:   "likely favorite first",
 }
 
 // getSessionFromCookie retrieves and validates session data from cookie
@@ -325,7 +325,7 @@ func (s *Server) handleResetViews(w http.ResponseWriter, r *http.Request) {
 	// (Simplified for this example - you might want to use sessions for proper flash messages)
 	http.SetCookie(w, &http.Cookie{
 		Name:  "flash",
-		Value: "Reset viewed status for " + strconv.FormatInt(count, 10) + " thumbnails",
+		Value: "Moved " + strconv.FormatInt(count, 10) + " To Watch thumbnails back to New",
 		Path:  "/",
 	})
 
@@ -408,7 +408,7 @@ func (s *Server) handleProcessArchival(w http.ResponseWriter, r *http.Request) {
 	// Set success message in flash
 	http.SetCookie(w, &http.Cookie{
 		Name:  "flash",
-		Value: fmt.Sprintf("Processing %d items for archival in the background", archivedCount),
+		Value: fmt.Sprintf("Moving %d favorites in the background", archivedCount),
 		Path:  "/",
 	})
 
@@ -500,7 +500,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 	if thumbnail == nil {
 		http.SetCookie(w, &http.Cookie{
 			Name:  "flash",
-			Value: "No unviewed thumbnails found",
+			Value: "Nothing new to review",
 			Path:  "/",
 		})
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -647,7 +647,7 @@ func (s *Server) handleSlideshow(w http.ResponseWriter, r *http.Request) {
 
 // ScoreBadge is the preference model's prediction as shown on a slide
 type ScoreBadge struct {
-	Label   string // "Delete", "Archive", or "Keep" for scores without an archive probability
+	Label   string // "Delete", "Favorite", or "Keep" for scores without an archive probability
 	Delete  bool   // the badge is about deleting
 	Percent int    // probability of that outcome
 }
@@ -663,7 +663,7 @@ func newScoreBadge(score *models.Score) *ScoreBadge {
 	var badge *ScoreBadge
 	switch {
 	case score.PArchive != nil && *score.PArchive > score.PDelete:
-		badge = &ScoreBadge{Label: "Archive", Percent: percent(*score.PArchive)}
+		badge = &ScoreBadge{Label: "Favorite", Percent: percent(*score.PArchive)}
 	case score.PArchive != nil:
 		badge = &ScoreBadge{Label: "Delete", Delete: true, Percent: percent(score.PDelete)}
 	case score.PDelete >= 0.5:
@@ -1485,7 +1485,7 @@ func (s *Server) handleSlideshowFinish(w http.ResponseWriter, r *http.Request) {
 	// Set success message
 	http.SetCookie(w, &http.Cookie{
 		Name:  "flash",
-		Value: "Slideshow completed! All thumbnails have been viewed.",
+		Value: "Slideshow completed! Nothing new left to review.",
 		Path:  "/",
 	})
 

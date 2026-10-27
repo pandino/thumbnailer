@@ -49,7 +49,7 @@ function loadThumbnails(containerId, status, viewed = null) {
 const EMPTY_STATE_MESSAGES = {
     'error-thumbnails':   'No errors — all thumbnails generated successfully.',
     'deleted-thumbnails': 'No items pending deletion.',
-    'unviewed-thumbnails': 'No unviewed thumbnails.',
+    'unviewed-thumbnails': 'Nothing new to review.',
 };
 
 function renderThumbnails(container, thumbnails) {

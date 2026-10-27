@@ -15,7 +15,7 @@ A Go application for generating and managing thumbnail mosaics from movie files.
 - **Containerized**: Runs as a containerized application with minimal dependencies
 - **Metrics Support**: Built-in Prometheus metrics for monitoring
 - **Deletion Management**: Safe deletion with undo capabilities and background processing
-- **Archive Management**: Archive movies to separate storage with background processing
+- **Favorites**: Move the best movies to separate, protected storage with background processing
 
 ## Prerequisites
 
@@ -130,9 +130,24 @@ The preference model adds `decisions`, `decided_movies`, `grid_geometry`, `embed
 
 Key fields:
 - `status`: Current processing status ('pending', 'success', 'error', 'deleted', 'archived')
-- `viewed`: Whether the thumbnail has been viewed by the user (0 or 1)
+- `viewed`: 1 once the movie was passed in the slideshow (shown as **To Watch**), 0 otherwise
 - `source`: How the thumbnail was created ('generated' or 'imported')
 - `file_size`: Size of the movie file in bytes
+
+## Movie States
+
+The UI uses triage names that differ from the internal ones, which the database, API and MPV scripts keep:
+
+| UI name | Internal | What it means | What happens |
+|---|---|---|---|
+| **Pending** | `pending` | Thumbnail not generated yet | The next scan generates it |
+| **Error** | `error` | Thumbnail generation failed | Shown on the control page; retried by a rescan |
+| **New** | `success`, `viewed = 0` | Not triaged yet | Shown in the slideshow |
+| **To Watch** | `success`, `viewed = 1` | Passed in the slideshow (→ / Space): worth watching, not decided yet | Stays in the movies dir and leaves the slideshow. **Reset To Watch** moves all of them back to New |
+| **Favorites** | `archived` | The best of: marked with ⭐ (`M`) in the slideshow or `a` in MPV | Queued: the next cleanup pass (or **Move Favorites**) copies the file to `ARCHIVE_DIR`, removes the original and drops the row. Moving it there protects it |
+| **Deleted** | `deleted` | Not wanted: 🗑️ (`D`) in the slideshow or `d` in MPV | Queued: the next cleanup pass (or **Process Deletions**) deletes the file and drops the row. Never processed while `DISABLE_DELETION=true` |
+
+To Watch is a holding state: after watching a movie in MPV you either favorite it or delete it. Until the queues are processed, a Deleted movie can be restored from the control page (back to New); in the slideshow, `U` undoes the last Favorite or Delete. In every case the grid is kept in `thumbnails/decided/` for the preference model.
 
 ## Web Interface
 
@@ -141,22 +156,22 @@ The application provides two main pages:
 ### Control Page (/)
 - **Dashboard**: Displays comprehensive statistics about movies and thumbnails
 - **Session Management**: Shows current slideshow session progress if active
-- **Manual Controls**: Buttons for scanning, cleanup, processing deletions, and processing archival
-- **Thumbnail Lists**: Browse thumbnails by status (unviewed, viewed, deleted, archived, errors)
+- **Manual Controls**: Buttons for scanning, cleanup, Reset To Watch, processing deletions and moving favorites
+- **Thumbnail Lists**: The newest New thumbnails, the deletion queue and errors
 - **Real-time Updates**: Dynamic loading of thumbnail data via JavaScript
 - **Slideshow Launcher**: Continue the current session, or start a new one in random order or ordered by the preference model's scores (`/slideshow?new=true&order=likely-delete|uncertain|likely-keep`)
 - **Preference Model**: Decision counts, scored movies, model quality (cross-validated AUC) and live AUC on your recent decisions
 
 ### Slideshow Page (/slideshow)
 - Displays thumbnails in a fullscreen slideshow view
-- Shows unviewed thumbnails, at random or in score order, with the model's prediction of the final outcome ("Delete 30%" / "Archive 40%") next to the slide counter
+- Shows New thumbnails, at random or in score order, with the model's prediction of the final outcome ("Delete 30%" / "Favorite 40%") next to the slide counter
 - Tracks session progress and statistics
 - Keyboard shortcuts:
-  - **→** (Right arrow) or **Space**: Mark as viewed and go to next thumbnail
+  - **→** (Right arrow) or **Space**: Watch later (To Watch) and go to next thumbnail
   - **U**: Undo last action (single-level undo)
-  - **D**: Delete current thumbnail/movie
-  - **M**: Archive current thumbnail/movie
-  - **S**: Skip to next thumbnail without marking as viewed
+  - **D**: Delete current movie
+  - **M**: Favorite current movie
+  - **S**: Skip to next thumbnail, leaving it New
   - **Esc**: Return to control page
 
 ### Additional Features
@@ -167,7 +182,7 @@ The application provides two main pages:
 - **Error Handling**: Comprehensive error handling and logging
 - **Migration Support**: Database migration capabilities
 - **Cleanup Tools**: Automatic orphan cleanup and deletion queue processing
-- **MPV Integration**: Lua scripts for archiving/deleting videos directly from MPV player
+- **MPV Integration**: Lua scripts for favoriting/deleting videos directly from MPV player
 
 ### API Endpoints
 
@@ -177,7 +192,7 @@ The application provides several API endpoints for programmatic access:
 - `GET /api/thumbnails` - List thumbnails (supports filtering by status, viewed state)
 - `GET /api/thumbnails/{id}` - Get specific thumbnail details
 - `GET /api/slideshow/next-image` - Preload next slideshow image
-- `POST /api/v1/video/archive` - Archive a video by filename
+- `POST /api/v1/video/archive` - Favorite a video by filename (queues it for the archive dir)
 - `POST /api/v1/video/delete` - Delete a video by filename
 - `GET /api/v1/video/status/{filename}` - Get video status by filename
 
@@ -191,17 +206,17 @@ Preference model worker (see below):
 
 ## Preference Model
 
-The app learns which movies you end up deleting and which you end up archiving. Every decision is logged: in the slideshow, delete (`D`), pass (moving on marks the movie viewed: undecided, to watch first) and archive; in MPV, archive and delete after watching. Undo cancels the logged decision. Grids of deleted and archived movies are kept in `thumbnails/decided/` as training history.
+The app learns which movies you end up deleting and which you end up favoriting. Every decision is logged: in the slideshow, delete (`D`), pass (moving on puts the movie in To Watch: undecided, to watch first) and favorite (`M`, logged as `archive`); in MPV, favorite and delete after watching. Undo cancels the logged decision. Grids of deleted and archived movies are kept in `thumbnails/decided/` as training history.
 
-`scripts/taste/` runs on a desktop machine: it embeds the grid frames with a SigLIP 2 image model on the CPU, learns the final outcome of each movie (deleted < undecided < archived) and uploads its chances of ending up deleted and archived. The slideshow shows the likelier one as a badge ("Delete 30%" / "Archive 40%"), and the control page can start a slideshow ordered by likely delete, most uncertain (teaches the model fastest) or likely archive. See `scripts/taste/README.md`.
+`scripts/taste/` runs on a desktop machine: it embeds the grid frames with a SigLIP 2 image model on the CPU, learns the final outcome of each movie (deleted < to watch < favorite) and uploads its chances of ending up deleted and favorited. The slideshow shows the likelier one as a badge ("Delete 30%" / "Favorite 40%"), and the control page can start a slideshow ordered by likely delete, most uncertain (teaches the model fastest) or likely favorite. See `scripts/taste/README.md`.
 
-`BACKFILL_LABELS=true` reconstructs the history from before decision logging, after each scan: a saved database snapshot and grids in `thumbnails/bootstrap/`, viewed movies as passed, and grids for the movies already in `ARCHIVE_DIR` (generated with ffmpeg). It's idempotent; turn it off once the log reports nothing left to backfill.
+`BACKFILL_LABELS=true` reconstructs the history from before decision logging, after each scan: a saved database snapshot and grids in `thumbnails/bootstrap/`, To Watch movies as passed, and grids for the movies already in `ARCHIVE_DIR` (generated with ffmpeg). It's idempotent; turn it off once the log reports nothing left to backfill.
 
 For detailed monitoring capabilities, see `METRICS.md` for comprehensive Prometheus metrics documentation.
 
 ## MPV Player Integration
 
-The project includes Lua scripts for MPV player that allow you to archive and delete videos directly while watching them. See `scripts/mpv/README.md` for detailed installation and usage instructions.
+The project includes Lua scripts for MPV player that allow you to favorite and delete videos directly while watching them. See `scripts/mpv/README.md` for detailed installation and usage instructions.
 
 **Quick Setup:**
 ```bash
@@ -210,7 +225,7 @@ cd scripts/mpv
 ./install.sh
 
 # Use in MPV player
-# Press 'a' to archive current movie
+# Press 'a' to favorite current movie
 # Press 'd' to mark current movie for deletion
 ```
 

@@ -3,7 +3,7 @@
 # Or add these lines to your existing input.conf
 
 # Movie Thumbnailer Integration
-a script-message archive-movie    # Archive current movie
+a script-message archive-movie    # Favorite current movie (moved to the archive dir)
 d script-message delete-movie     # Mark current movie for deletion and skip to next
 
 # Alternative bindings (uncomment if preferred)

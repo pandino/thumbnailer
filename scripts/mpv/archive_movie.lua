@@ -51,7 +51,7 @@ local function handle_response(res, filename)
         msg.verbose("API Response: " .. response_text)
         
         if response_text:match('"success"%s*:%s*true') then
-            mp.osd_message("✅ Archived: " .. filename, 3)
+            mp.osd_message("✅ Favorited: " .. filename, 3)
             msg.info("Successfully archived: " .. filename)
             
             -- Skip to next file after successful archival
@@ -60,15 +60,15 @@ local function handle_response(res, filename)
             -- Try to extract error message
             local error_msg = response_text:match('"error"%s*:%s*"([^"]*)"')
             if error_msg then
-                mp.osd_message("❌ Archive failed: " .. error_msg, 4)
+                mp.osd_message("❌ Favorite failed: " .. error_msg, 4)
                 msg.error("Archive failed for " .. filename .. ": " .. error_msg)
             else
-                mp.osd_message("❌ Archive failed: Unknown error", 4)
+                mp.osd_message("❌ Favorite failed: Unknown error", 4)
                 msg.error("Archive failed for " .. filename .. ": Unknown error")
             end
         end
     else
-        mp.osd_message("❌ Archive failed: Connection error", 4)
+        mp.osd_message("❌ Favorite failed: Connection error", 4)
         msg.error("Failed to connect to thumbnailer API for " .. filename)
         msg.error("curl exit code: " .. tostring(res.status))
         msg.error("stderr: " .. (res.stderr or ""))
@@ -93,7 +93,7 @@ local function archive_current_movie()
         return
     end
     
-    mp.osd_message("📦 Archiving: " .. filename .. "...", 2)
+    mp.osd_message("⭐ Favoriting: " .. filename .. "...", 2)
     msg.info("Archiving movie: " .. filename)
     
     -- Make the API request

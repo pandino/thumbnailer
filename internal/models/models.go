@@ -14,7 +14,7 @@ type Thumbnail struct {
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 	Status        string    `json:"status"`
-	Viewed        int       `json:"viewed"`
+	Viewed        int       `json:"viewed"` // 1 = passed in the slideshow; the UI calls success rows "New" (0) and "To Watch" (1)
 	Width         int       `json:"width"`
 	Height        int       `json:"height"`
 	Duration      float64   `json:"duration"`
@@ -39,7 +39,8 @@ type Stats struct {
 	UnviewedSize int64 `json:"unviewed_size"` // Total file size of unviewed movies in bytes
 }
 
-// Constants for thumbnail status values
+// Constants for thumbnail status values. The UI calls archived movies "Favorites": the archive
+// dir holds the best of, and moving them there protects them.
 const (
 	StatusPending  = "pending"
 	StatusSuccess  = "success"

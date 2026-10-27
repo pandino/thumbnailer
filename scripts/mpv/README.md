@@ -1,11 +1,11 @@
 # MPV Scripts for Movie Thumbnailer Integration
 
-This directory contains Lua scripts for MPV player that integrate with the Movie Thumbnailer API to archive and delete videos directly from the player.
+This directory contains Lua scripts for MPV player that integrate with the Movie Thumbnailer API to favorite and delete videos directly from the player. A favorite is one of the best movies: it is moved to the server's archive dir to protect it (internally it is still called `archive`, as in the `archive-movie` message and the `/api/v1/video/archive` endpoint). See *Movie States* in the main README.
 
 ## Scripts
 
 ### Basic Scripts (using curl)
-- `archive_movie.lua` - Archives the currently playing movie and keeps playing it
+- `archive_movie.lua` - Favorites the currently playing movie and keeps playing it
 - `delete_movie.lua` - Marks the currently playing movie for deletion (single press) and skips to the next video
 - `show_prediction.lua` - Shows the preference model's prediction for each movie when it starts (e.g. "🤖 Delete 87%")
 
@@ -58,7 +58,7 @@ This directory contains Lua scripts for MPV player that integrate with the Movie
 
 2. **Configure key bindings in `~/.config/mpv/input.conf`:**
    ```
-   # Archive current movie with 'a' key
+   # Favorite current movie with 'a' key
    a script-message archive-movie
    
    # Delete current movie with 'd' key  
@@ -91,17 +91,17 @@ The enhanced scripts instead read `config.lua` (host, port, OSD durations, auto-
 2. **Play videos in MPV** with a playlist or individual files
 
 3. **Use keyboard shortcuts:**
-   - Press `a` to archive the current movie
+   - Press `a` to favorite the current movie
    - Press `d` to mark the current movie for deletion (single press, no confirmation; the enhanced and native variants require a second press within 3 seconds)
    
 4. **Visual feedback:**
    - Deleting shows "🗑️ Marked for deletion: filename  [N deleted this session]" and skips to the next video
-   - Archiving shows "✅ Archived: filename" and keeps playing the current video (the enhanced and native variants skip to the next one)
+   - Favoriting shows "✅ Favorited: filename" and keeps playing the current video (the enhanced and native variants skip to the next one)
    - Error messages are displayed if operations fail
 
 ## Model Prediction OSD (`show_prediction.lua`)
 
-When a file starts playing, the script asks `GET /api/v1/video/status/{filename}` for the preference model's prediction and shows it on the OSD for 4 seconds, in the same form as the slideshow badge: the likelier final outcome and its probability, `Delete 87%` or `Archive 64%` (`Keep` for scores from before the archive model). Movies the model hasn't scored yet show `Not scored yet`; files that aren't in the database show nothing.
+When a file starts playing, the script asks `GET /api/v1/video/status/{filename}` for the preference model's prediction and shows it on the OSD for 4 seconds, in the same form as the slideshow badge: the likelier final outcome and its probability, `Delete 87%` or `Favorite 64%` (`Keep` for scores from before the archive model). Movies the model hasn't scored yet show `Not scored yet`; files that aren't in the database show nothing.
 
 The request runs in the background, so playback never waits for the server. To show the prediction again, bind a key:
 
@@ -136,11 +136,11 @@ alias xxxmpv='curl -s "http://192.168.1.35:8080/api/thumbnails?status=success&vi
 
 ## Features
 
-### Archive Script (`archive_movie.lua`)
+### Favorite Script (`archive_movie.lua`)
 - ✅ Extracts filename from current playing file
 - ✅ Calls `/api/v1/video/archive` endpoint
 - ✅ Shows OSD confirmation messages
-- ✅ Keeps playing the current video after archiving (uncomment `mp.command("playlist-next")` in `handle_response` to skip instead)
+- ✅ Keeps playing the current video after favoriting (uncomment `mp.command("playlist-next")` in `handle_response` to skip instead)
 - ✅ Handles API errors gracefully
 - ✅ Logs operations for debugging
 
@@ -215,13 +215,13 @@ END script-message archive-movie
 
 1. **Video Management Workflow:**
    - Watch videos in MPV with playlist
-   - Press `a` to archive good content
+   - Press `a` to favorite the best content
    - Press `d` to mark unwanted content for deletion
-   - Pressing a key only queues the change: the files are actually archived/deleted by the next cleanup pass (every 6h inside the work window, or immediately with **Cleanup** on the control page). Deletions are never processed while `DISABLE_DELETION=true`
+   - Pressing a key only queues the change: the files are actually moved to the archive dir/deleted by the next cleanup pass (every 6h inside the work window, or immediately with **Cleanup** on the control page). Deletions are never processed while `DISABLE_DELETION=true`
    - Each decision is also logged with the `player` stage as training data for the preference model
 
 2. **Batch Processing:**
-   - Archive/delete videos during playback
+   - Favorite/delete videos during playback
    - Use **Cleanup** on the Movie Thumbnailer control page to process the queues right away
    - Monitor operations via web interface statistics
 

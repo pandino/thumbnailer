@@ -20,7 +20,7 @@
                 {{if .PendingDelete}}
                 <span class="deletion-status">Marked for deletion — press U to undo</span>
                 {{else if .PendingArchive}}
-                <span class="deletion-status pending-archive">Marked for archival — press U to undo</span>
+                <span class="deletion-status pending-archive">Marked as favorite — press U to undo</span>
                 {{else if eq .Thumbnail.Status "deleted"}}
                 <span class="deletion-status">In deletion queue</span>
                 {{end}}
@@ -63,24 +63,24 @@
             <a href="/slideshow/previous"
             class="nav-button undo{{if and (not .HasPrevious) (not .PendingDelete) (not .PendingArchive)}} disabled{{end}}{{if .PendingDelete}} pending-delete{{end}}{{if .PendingArchive}} pending-archive{{end}}"
             {{if and (not .HasPrevious) (not .PendingDelete) (not .PendingArchive)}}onclick="return false;"{{end}}
-            title="{{if .PendingDelete}}Undo Delete{{else if .PendingArchive}}Undo Archive{{else}}Undo last action{{end}}">
-                {{if .PendingDelete}}↩ Undo Delete{{else if .PendingArchive}}↶ Undo Archive{{else if .HasPrevious}}← Undo{{else}}–{{end}}
+            title="{{if .PendingDelete}}Undo Delete{{else if .PendingArchive}}Undo Favorite{{else}}Undo last action{{end}}">
+                {{if .PendingDelete}}↩ Undo Delete{{else if .PendingArchive}}↶ Undo Favorite{{else if .HasPrevious}}← Undo{{else}}–{{end}}
             </a>
             
             {{if .IsLastThumbnail}}
-            <a href="/slideshow/finish" class="nav-button finish" title="Mark as viewed and finish slideshow">
+            <a href="/slideshow/finish" class="nav-button finish" title="Watch later and finish slideshow">
                 Finish
             </a>
             {{else}}
-            <a href="/slideshow/next" class="nav-button next" title="Mark as viewed and go to next random thumbnail">
+            <a href="/slideshow/next" class="nav-button next" title="Watch later and go to the next thumbnail">
                 Next
             </a>
             {{end}}
             
             <div class="nav-actions">
                 <form action="/slideshow/archive" method="post" class="nav-action-form">
-                    <button type="submit" class="nav-button archive" title="Archive movie" {{if or (eq .Thumbnail.Status "deleted") (eq .Thumbnail.Status "archived")}}disabled{{end}}>
-                        📦
+                    <button type="submit" class="nav-button archive" title="Favorite movie" {{if or (eq .Thumbnail.Status "deleted") (eq .Thumbnail.Status "archived")}}disabled{{end}}>
+                        ⭐
                     </button>
                 </form>
                 
@@ -105,9 +105,9 @@
                 <span class="shortcut-group">
                     <span class="shortcut">→</span> or <span class="shortcut">Space</span>:
                     {{if .IsLastThumbnail}}
-                    <span class="shortcut-value">Finish (Mark as Viewed)</span>
+                    <span class="shortcut-value">Watch Later &amp; Finish</span>
                     {{else}}
-                    <span class="shortcut-value">Next Random (Mark as Viewed)</span>
+                    <span class="shortcut-value">Watch Later &amp; Next</span>
                     {{end}}
                 </span>
 
@@ -116,7 +116,7 @@
                     {{if .PendingDelete}}
                     <span class="shortcut-value">Undo Delete</span>
                     {{else if .PendingArchive}}
-                    <span class="shortcut-value">Undo Archive</span>
+                    <span class="shortcut-value">Undo Favorite</span>
                     {{else if .HasPrevious}}
                     <span class="shortcut-value">Undo</span>
                     {{else}}
@@ -127,9 +127,9 @@
                 <span class="shortcut-group">
                     <span class="shortcut">M</span>:
                     {{if or (eq .Thumbnail.Status "deleted") (eq .Thumbnail.Status "archived")}}
-                    <span class="shortcut-disabled">Archive (Unavailable)</span>
+                    <span class="shortcut-disabled">Favorite (Unavailable)</span>
                     {{else}}
-                    <span class="shortcut-value">Archive</span>
+                    <span class="shortcut-value">Favorite</span>
                     {{end}}
                 </span>
 
@@ -166,10 +166,10 @@
         <div class="modal-dialog">
             <div class="modal-title">Keyboard Shortcuts</div>
             <table class="shortcuts-table">
-                <tr><td><kbd>→</kbd> / <kbd>Space</kbd></td><td>Next / Finish (mark as viewed)</td></tr>
+                <tr><td><kbd>→</kbd> / <kbd>Space</kbd></td><td>Watch later &amp; next / finish</td></tr>
                 <tr><td><kbd>U</kbd></td><td>Undo last action</td></tr>
                 <tr><td><kbd>D</kbd></td><td>Delete / Delete &amp; Finish</td></tr>
-                <tr><td><kbd>M</kbd></td><td>Archive</td></tr>
+                <tr><td><kbd>M</kbd></td><td>Favorite</td></tr>
                 <tr><td><kbd>S</kbd></td><td>Skip (no mark)</td></tr>
                 <tr><td><kbd>Esc</kbd></td><td>Back to control</td></tr>
                 <tr><td><kbd>?</kbd></td><td>Toggle this help</td></tr>
