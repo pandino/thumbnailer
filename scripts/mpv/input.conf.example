@@ -5,6 +5,7 @@
 # Movie Thumbnailer Integration
 a script-message archive-movie    # Favorite current movie (moved to the archive dir)
 d script-message delete-movie     # Mark current movie for deletion and skip to next
+n script-binding show_prediction/show-prediction       # Show the model's prediction again (default binding)
 
 # Alternative bindings (uncomment if preferred)
 # Shift+a script-message archive-movie

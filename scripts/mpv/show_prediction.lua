@@ -1,6 +1,6 @@
 -- Show the preference model's prediction for the current movie via Movie Thumbnailer API
 -- Place this file in ~/.config/mpv/scripts/ or your mpv scripts directory
--- Shown automatically when a file starts; add to input.conf to show it again: key_name script-message show-prediction
+-- Shown automatically when a file starts; press n to show it again (rebind in input.conf: key_name script-binding show_prediction/show-prediction)
 
 local msg = require 'mp.msg'
 local utils = require 'mp.utils'
@@ -26,8 +26,15 @@ local function url_encode(s)
     end))
 end
 
+-- Last fetched OSD text, so showing it again needs no request
+local cached = { filename = nil, text = nil }
+
+local function show_cached(text)
+    mp.osd_message(text, OSD_DURATION)
+end
+
 -- Function to fetch and show the prediction, without blocking playback
-local function show_prediction()
+local function fetch_prediction()
     local filename = get_filename(mp.get_property("path"))
     if not filename then
         return
@@ -53,17 +60,28 @@ local function show_prediction()
             msg.info("Movie not in the thumbnailer database: " .. filename)
             return
         end
-        if not response.prediction then
-            mp.osd_message("🤖 Not scored yet", OSD_DURATION)
-            return
-        end
 
-        mp.osd_message("🤖 " .. response.prediction, OSD_DURATION)
-        msg.info("Prediction for " .. filename .. ": " .. response.prediction)
+        local text = "🤖 Not scored yet"
+        if response.prediction then
+            text = "🤖 " .. response.prediction
+            msg.info("Prediction for " .. filename .. ": " .. response.prediction)
+        end
+        cached = { filename = filename, text = text }
+        show_cached(text)
     end)
 end
 
-mp.register_event("file-loaded", show_prediction)
-mp.register_script_message("show-prediction", show_prediction)
+-- Show the prediction again: from the cache when it is for the current file, otherwise fetch it
+local function show_prediction()
+    if cached.text and cached.filename == get_filename(mp.get_property("path")) then
+        show_cached(cached.text)
+        return
+    end
+    fetch_prediction()
+end
 
-msg.info("Show prediction script loaded. Use 'script-message show-prediction' to show it again.")
+mp.register_event("file-loaded", fetch_prediction)
+mp.register_script_message("show-prediction", show_prediction)
+mp.add_key_binding("n", "show-prediction", show_prediction)
+
+msg.info("Show prediction script loaded. Press n (or 'script-message show-prediction') to show it again.")

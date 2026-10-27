@@ -103,10 +103,10 @@ The enhanced scripts instead read `config.lua` (host, port, OSD durations, auto-
 
 When a file starts playing, the script asks `GET /api/v1/video/status/{filename}` for the preference model's prediction and shows it on the OSD for 4 seconds, in the same form as the slideshow badge: the likelier final outcome and its probability, `Delete 87%` or `Favorite 64%` (`Keep` for scores from before the archive model). Movies the model hasn't scored yet show `Not scored yet`; files that aren't in the database show nothing.
 
-The request runs in the background, so playback never waits for the server. To show the prediction again, bind a key:
+The request runs in the background, so playback never waits for the server. The answer is kept for the current file, so pressing `n` shows it again without asking the server (it fetches it only if the first request failed). To use a different key, rebind it in `input.conf`:
 
 ```
-p script-message show-prediction
+y script-binding show_prediction/show-prediction
 ```
 
 Install it like the other scripts and set `THUMBNAILER_HOST`/`THUMBNAILER_PORT` at the top. It needs `curl` and a server that includes `prediction` in the status response.
